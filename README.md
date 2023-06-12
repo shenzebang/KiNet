@@ -1,2 +1,2 @@
-# KiNet
-Neural Kinetic Dynamics
+# KiNet: Neural Kinetic Dynamics
+A Jax-based implementation.
