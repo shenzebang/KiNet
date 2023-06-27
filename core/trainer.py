@@ -7,6 +7,8 @@ from api import Method
 import jax.random as random
 from optax import GradientTransformation
 
+import sys
+
 
 class JaxTrainer:
     def __init__(self,
@@ -73,15 +75,14 @@ class JaxTrainer:
         objetive_value_list = []
         results = {}
         rngs = jax.random.split(self.rng, self.args.number_of_iterations)
-        for epoch in trange(self.args.number_of_iterations):
+        for epoch in range(self.args.number_of_iterations):
             rng = rngs[epoch]
             rng_train, rng_test, rng_plot = random.split(rng, 3)
 
             loss_value, grad = value_and_grad_fn_efficient(self.params, rng_train)
             self.params, opt_state = step(self.params, opt_state, grad)
 
-            if (
-                    epoch % self.args.test_frequency == 0 and self.method.test_fn is not None) or epoch >= self.args.number_of_iterations - 3:
+            if (epoch % self.args.test_frequency == 0 and self.method.test_fn is not None) or epoch >= self.args.number_of_iterations - 3:
                 epoch_list.append(epoch + 1)
                 objetive_value_list.append(loss_value)
                 result_epoch = test(self.params, rng_test)
@@ -92,8 +93,9 @@ class JaxTrainer:
                     for key in result_epoch:
                         results[key].append(result_epoch[key])
                 print(
-                    f"In epoch {epoch + 1}, loss is {loss_value}, test statistics {result_epoch}"
+                    f"In epoch {epoch + 1: 5d}, loss is {loss_value: .3e}, test statistics {result_epoch}"
                 )
+                sys.stdout.flush()
 
             if epoch + 1 % self.args.plot_frequency == 0 and self.method.plot_fn is not None:
                 plot(self.params, rng_plot)
