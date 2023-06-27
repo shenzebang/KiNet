@@ -10,13 +10,15 @@ import jax
 from utils.logging_utils import save_config
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from methods.KiNet import KiNet
+from methods.PINN import PINN
 # Example problems
 PDE_INSTANCES = {
     '2D-Kinetic-Fokker-Planck': KineticFokkerPlanck,
 }
 # Methods
 METHODS = {
-    'KiNet': KiNet
+    'KiNet' : KiNet,
+    'PINN'  : PINN,
 }
 
 

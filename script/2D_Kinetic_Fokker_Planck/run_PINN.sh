@@ -1,0 +1,1 @@
+python main.py --PDE 2D-Kinetic-Fokker-Planck --method PINN --boundary_condition None --domain_dim 2 --number_of_iterations 400000 --learning_rate 1e-4 --batch_size_initial 10000 --batch_size 10000 --domain_min -5 --domain_max 5 --total_evolving_time 1

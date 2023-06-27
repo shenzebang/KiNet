@@ -37,7 +37,6 @@ class KiNet(Method):
         # compute function value and gradient
         config_train = {
             "ODE_tolerance" : self.args.ODE_tolerance,
-            "T"             : self.args.total_evolving_time,
         }
         return INSTANCES[self.args.PDE].value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
                                                           config=config_train, pde_instance=self.pde_instance)

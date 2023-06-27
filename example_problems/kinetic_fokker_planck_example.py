@@ -1,13 +1,13 @@
 import jax.numpy as jnp
-from core.distribution import Gaussian, DistributionKinetic
+from core.distribution import Gaussian, DistributionKinetic, Uniform
 import jax
 from jax.experimental.ode import odeint
 from api import ProblemInstance
 from utils.common_utils import v_gaussian_score, v_gaussian_log_density
 from core.potential import QuadraticPotential
 
-Sigma_x_0 = jnp.diag(jnp.array([0.5, 1.5]))
-mu_x_0 = jnp.array([-2., -2.])
+Sigma_x_0 = jnp.diag(jnp.array([1., 1.]))
+mu_x_0 = jnp.array([0., 0.])
 distribution_x_0 = Gaussian(mu_x_0, Sigma_x_0)
 
 Sigma_v_0 = jnp.diag(jnp.array([1, 1]))
@@ -66,13 +66,18 @@ class KineticFokkerPlanck(ProblemInstance):
         self.diffusion_coefficient = jnp.ones([]) * args.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * args.total_evolving_time
         self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
+
         self.test_data = self.prepare_test_data()
         self.target_potential = target_potential
         self.beta = beta
         self.Gamma = Gamma
         # domain of interest (d dimensional box)
-        self.mins = args.domain_min * jnp.ones(args.domain_dim)
-        self.maxs = args.domain_max * jnp.ones(args.domain_dim)
+        self.mins = args.domain_min * jnp.ones(args.domain_dim * 2)
+        self.maxs = args.domain_max * jnp.ones(args.domain_dim * 2)
+        self.domain_area = (args.domain_max - args.domain_min) ** (args.domain_dim * 2)
+
+        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * args.total_evolving_time)
+        self.distribution_xv = Uniform(self.mins, self.maxs)
 
     def prepare_test_data(self):
         test_time_stamps = jnp.linspace(jnp.zeros([]), self.total_evolving_time, num=11)
@@ -86,10 +91,16 @@ class KineticFokkerPlanck(ProblemInstance):
     def ground_truth(self, xs: jnp.ndarray):
         _, mus, Sigmas = self.test_data
 
-        v_v_gaussian_score = jax.vmap(v_gaussian_score, in_axes=[0, 0, 0])
-        scores_true = v_v_gaussian_score(xs, Sigmas, mus)
+        if xs.ndim == 3:
+            v_v_gaussian_score = jax.vmap(v_gaussian_score, in_axes=[0, 0, 0])
+            v_v_gaussian_log_density = jax.vmap(v_gaussian_log_density, in_axes=[0, 0, 0])
+        elif xs.ndim == 2:
+            v_v_gaussian_score = jax.vmap(v_gaussian_score, in_axes=[None, 0, 0])
+            v_v_gaussian_log_density = jax.vmap(v_gaussian_log_density, in_axes=[None, 0, 0])
+        else:
+            raise NotImplementedError
 
-        v_v_gaussian_log_density = jax.vmap(v_gaussian_log_density, in_axes=[0, 0, 0])
+        scores_true = v_v_gaussian_score(xs, Sigmas, mus)
         log_densities_true = v_v_gaussian_log_density(xs, Sigmas, mus)
 
         return scores_true, log_densities_true

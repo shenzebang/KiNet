@@ -31,7 +31,7 @@ class MLP(nn.Module):
             if i < len(self.layers) - 1:
                 y = self.act(y)
 
-        return y
+        return jax.nn.relu(y)
 
 class KiNet(nn.Module):
     output_dim: int = 2
