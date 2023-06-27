@@ -92,8 +92,11 @@ class JaxTrainer:
                 else:
                     for key in result_epoch:
                         results[key].append(result_epoch[key])
+                msg = f"In epoch {epoch + 1: 5d}, loss is {loss_value: .3e}, "
+                for key in result_epoch:
+                    msg = msg + f"{key} is {result_epoch[key]: .3e}, "
                 print(
-                    f"In epoch {epoch + 1: 5d}, loss is {loss_value: .3e}, test statistics {result_epoch}"
+                    msg
                 )
                 sys.stdout.flush()
 
