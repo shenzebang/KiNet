@@ -6,7 +6,7 @@ from utils.plot_utils import plot_density_2d
 from core.distribution import Uniform
 from core.model import MLP
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
-
+from core.normalizing_flow import RealNVP, MNF
 
 def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
     weights = config["weights"]
@@ -53,7 +53,8 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
         mass_change_t = jax.vmap(mass_change_t, in_axes=(0, None))
 
         # u_pred_boundary = forward_fn(_params, time_boundary,    space_boundary)
-        u_pred_initial = forward_fn(_params, time_initial, space_initial)
+        vv_forward = jax.vmap(jax.vmap(forward_fn, in_axes=(None, None, 0)), in_axes=(None, 0, None))
+        u_pred_initial = vv_forward(_params, time_initial, space_initial)
         f_pred_train = fokker_planck_eq(time_train, space_train)
         mass_change_total = mass_change_t(time_train, space_train)
         # loss_u_boundary = jnp.mean((u_pred_boundary - target_boundary) ** 2)
@@ -96,14 +97,18 @@ def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     log_rho = jax.vmap(jax.vmap(log_rho, in_axes=[None, 0]), in_axes=[0, None])
     nabla_log_rho = jax.vmap(jax.vmap(nabla_log_rho, in_axes=[None, 0]), in_axes=[0, None])
 
-    densities = jnp.maximum(rho(test_time_stamps[:, None], points_test), 1e-10)
+    densities = rho(test_time_stamps[:, None], points_test)
     log_densities = log_rho(test_time_stamps[:, None], points_test)
     scores = jnp.squeeze(nabla_log_rho(test_time_stamps[:, None], points_test))
 
     scores_true, log_densities_true = pde_instance.ground_truth(points_test)
 
-    KL = jnp.mean(densities * (log_densities - log_densities_true[:, :, None])) * domain_area
-    L1 = jnp.mean(jnp.abs(densities - jnp.exp(log_densities_true[:, :, None]))) * domain_area
+    densities = jnp.squeeze(densities)
+    log_densities = jnp.squeeze(log_densities)
+
+
+    KL = jnp.mean(densities * (log_densities - log_densities_true)) * domain_area
+    L1 = jnp.mean(jnp.abs(densities - jnp.exp(log_densities_true))) * domain_area
     total_mass = jnp.mean(densities) * domain_area
     total_mass_true = jnp.mean(jnp.exp(log_densities_true)) * domain_area
 
@@ -125,5 +130,18 @@ def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
         plot_density_2d(f, config)
 
 
-def create_model_fn():
-    return MLP()
+# def create_model_fn():
+#     return MLP()
+
+def create_model_fn(log_prob_0):
+    param_dict = {
+        'dim': 4,
+        'embed_time_dim': 0,
+        'couple_mul': 2,
+        'mask_type': 'loop',
+        'activation_layer': 'celu',
+        'soft_init': 0.,
+        'ignore_time': False,
+    }
+    mnf = MNF(**param_dict)
+    return RealNVP(mnf, log_prob_0)

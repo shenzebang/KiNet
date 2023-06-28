@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     # create model
     net = method.create_model_fn()
-    params = net.init(random.PRNGKey(11), jnp.zeros((1, 1)), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
 
     # create optimizer
     optimizer = optax.adam(learning_rate=args.learning_rate)

@@ -13,7 +13,7 @@ class PINN(Method):
     def __init__(self, pde_instance: KineticFokkerPlanck, args, rng):
         self.args = args
         self.pde_instance = pde_instance
-        self.create_model_fn = INSTANCES[args.PDE].create_model_fn
+        self.create_model_fn = partial(INSTANCES[args.PDE].create_model_fn, pde_instance.distribution_0.logdensity)
 
     def test_fn(self, forward_fn, params, rng):
 
@@ -56,7 +56,7 @@ class PINN(Method):
         density_0 = jnp.exp(self.pde_instance.distribution_0.logdensity(data_0))
 
 
-        time_train = self.pde_instance.distribution_t.sample(50, rng_train_t)
+        time_train = self.pde_instance.distribution_t.sample(10, rng_train_t)
         data_train = self.pde_instance.distribution_xv.sample(self.args.batch_size, rng_train_xv)
         data = {
             "data_initial": (time_0, data_0, density_0),
