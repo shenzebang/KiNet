@@ -7,6 +7,9 @@ from core.distribution import Uniform
 from core.model import MLP
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from core.normalizing_flow import RealNVP, MNF
+from api import ProblemInstance
+import jax.random as random
+from functools import partial
 
 def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
     weights = config["weights"]
@@ -130,18 +133,41 @@ def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
         plot_density_2d(f, config)
 
 
-# def create_model_fn():
-#     return MLP()
+def create_model_fn(problem_instance: ProblemInstance):
+    net = MLP()
+    params = net.init(random.PRNGKey(11), jnp.zeros(1),
+                      jnp.squeeze(problem_instance.distribution_0.sample(1, random.PRNGKey(1))))
+    # set the scaling of the MLP so that the total mass is of the right order.
 
-def create_model_fn(log_prob_0):
-    param_dict = {
-        'dim': 4,
-        'embed_time_dim': 0,
-        'couple_mul': 2,
-        'mask_type': 'loop',
-        'activation_layer': 'celu',
-        'soft_init': 0.,
-        'ignore_time': False,
-    }
-    mnf = MNF(**param_dict)
-    return RealNVP(mnf, log_prob_0)
+
+
+    mins = problem_instance.mins
+    maxs = problem_instance.maxs
+    domain_area = problem_instance.domain_area
+    rho = partial(net.apply, params)
+    rho = jax.vmap(rho, in_axes=[None, 0])
+    distribution_0 = Uniform(mins, maxs)
+    points_test = distribution_0.sample(256 * 256, random.PRNGKey(123))
+    densities = rho(jnp.zeros(1), points_test)
+    total_mass = jnp.mean(densities) * domain_area
+
+    net.scaling = 1./ total_mass
+
+    print(
+        f"Automatically set the scaling in the MLP model for PINN to 1/{total_mass: .2e}."
+    )
+
+    return net, params
+
+# def create_model_fn(log_prob_0):
+#     param_dict = {
+#         'dim': 4,
+#         'embed_time_dim': 0,
+#         'couple_mul': 2,
+#         'mask_type': 'loop',
+#         'activation_layer': 'celu',
+#         'soft_init': 0.,
+#         'ignore_time': False,
+#     }
+#     mnf = MNF(**param_dict)
+#     return RealNVP(mnf, log_prob_0)

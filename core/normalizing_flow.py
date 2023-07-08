@@ -31,7 +31,8 @@ class SinusoidalEmbedding(nn.Module):
         emb = math.log(10000) / (half_dim - 1)
         # emb = math.log(100) / (half_dim - 1)
         emb = jnp.exp(jnp.arange(half_dim) * -emb)
-        emb = jnp.expand_dims(inputs, -1) * emb
+        # emb = jnp.expand_dims(inputs, -1) * emb
+        emb = inputs * emb
         # emb = jnp.expand_dims(10 * inputs, -1) * emb
         assert(emb.ndim == 1)
         emb = jnp.concatenate([jnp.sin(emb), jnp.cos(emb)], -1)
@@ -100,11 +101,11 @@ class BasicMLP(nn.Module):
     @nn.compact
     def __call__(self, X):
         out = nn.Sequential([
+            nn.Dense(32),
+            ActivationFactory.create(self.act),
             nn.Dense(64),
             ActivationFactory.create(self.act),
-            nn.Dense(128),
-            ActivationFactory.create(self.act),
-            nn.Dense(128),
+            nn.Dense(64),
             ActivationFactory.create(self.act),
             nn.Dense(self.out_dim),
         ])(X)

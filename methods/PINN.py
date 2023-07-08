@@ -13,7 +13,10 @@ class PINN(Method):
     def __init__(self, pde_instance: KineticFokkerPlanck, args, rng):
         self.args = args
         self.pde_instance = pde_instance
-        self.create_model_fn = partial(INSTANCES[args.PDE].create_model_fn, pde_instance.distribution_0.logdensity)
+
+    def create_model_fn(self):
+        return INSTANCES[self.args.PDE].create_model_fn(self.pde_instance)
+
 
     def test_fn(self, forward_fn, params, rng):
 

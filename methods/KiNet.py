@@ -2,6 +2,7 @@ import methods.KiNet_instances.kinetic_fokker_planck as kinetic_fokker_planck
 from api import Method, ProblemInstance
 from functools import partial
 import jax.random as random
+import jax.numpy as jnp
 INSTANCES = {
     '2D-Kinetic-Fokker-Planck': kinetic_fokker_planck
 }
@@ -12,6 +13,16 @@ class KiNet(Method):
         self.args = args
         self.pde_instance = pde_instance
         self.create_model_fn = INSTANCES[args.PDE].create_model_fn
+
+
+    def create_model_fn(self):
+
+        net = INSTANCES[self.args.PDE].create_model_fn()
+        params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(self.pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+
+        return net, params
+
+
 
     def test_fn(self, forward_fn, params, rng):
 

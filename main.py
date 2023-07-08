@@ -1,6 +1,6 @@
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 from config import args_parser
 import optax
 import jax.random as random
@@ -39,8 +39,9 @@ if __name__ == '__main__':
     method = METHODS[args.method](pde_instance=pde_instance, args=args, rng=rng_method)
 
     # create model
-    net = method.create_model_fn()
-    params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+    # net = method.create_model_fn()
+    # params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+    net, params = method.create_model_fn()
 
     # create optimizer
     optimizer = optax.adam(learning_rate=args.learning_rate)

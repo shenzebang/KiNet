@@ -7,7 +7,7 @@ from utils.common_utils import v_gaussian_score, v_gaussian_log_density
 from core.potential import QuadraticPotential
 
 Sigma_x_0 = jnp.diag(jnp.array([1., 1.]))
-mu_x_0 = jnp.array([0., 0.])
+mu_x_0 = jnp.array([2., 2.])
 distribution_x_0 = Gaussian(mu_x_0, Sigma_x_0)
 
 Sigma_v_0 = jnp.diag(jnp.array([1, 1]))

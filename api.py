@@ -1,6 +1,7 @@
 from core.distribution import Distribution
 import jax.numpy as jnp
 import flax.linen as nn
+from typing import Dict
 
 
 class ProblemInstance:
@@ -29,5 +30,5 @@ class Method:
     def plot_fn(self, forward_fn, params, rng):
         pass
 
-    def create_model_fn(self) -> nn.Module:
+    def create_model_fn(self) -> (nn.Module, Dict):
         pass
