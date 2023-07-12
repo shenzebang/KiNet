@@ -5,9 +5,10 @@ from typing import Dict
 
 
 class ProblemInstance:
-    distribution_0: Distribution
-    total_evolving_time: jnp.ndarray
-    diffusion_coefficient: jnp.ndarray
+    distribution_0: Distribution # initial distribution
+    distribution_domain: Distribution # distribution over the domain for evaluating l2 norm in PINN
+    total_evolving_time: jnp.ndarray = 1.
+    diffusion_coefficient: jnp.ndarray = 0.
     mins: jnp.ndarray
     maxs: jnp.ndarray
 

@@ -71,13 +71,14 @@ class KineticFokkerPlanck(ProblemInstance):
         self.target_potential = target_potential
         self.beta = beta
         self.Gamma = Gamma
-        # domain of interest (d dimensional box)
-        self.mins = args.domain_min * jnp.ones(args.domain_dim * 2)
-        self.maxs = args.domain_max * jnp.ones(args.domain_dim * 2)
-        self.domain_area = (args.domain_max - args.domain_min) ** (args.domain_dim * 2)
+        # domain of interest (2d dimensional box)
+        effective_domain_dim = args.domain_dim * 2  # (2d for position and velocity)
+        self.mins = args.domain_min * jnp.ones(effective_domain_dim)
+        self.maxs = args.domain_max * jnp.ones(effective_domain_dim)
+        self.domain_area = (args.domain_max - args.domain_min) ** (effective_domain_dim)
 
         self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * args.total_evolving_time)
-        self.distribution_xv = Uniform(self.mins, self.maxs)
+        self.distribution_domain = Uniform(self.mins, self.maxs)
 
     def prepare_test_data(self):
         test_time_stamps = jnp.linspace(jnp.zeros([]), self.total_evolving_time, num=11)

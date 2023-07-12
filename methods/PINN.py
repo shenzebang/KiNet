@@ -1,16 +1,17 @@
 import methods.PINN_instances.kinetic_fokker_planck as kinetic_fokker_planck
-from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
-from api import Method
+import methods.PINN_instances.euler_poisson as euler_poisson
+from api import Method, ProblemInstance
 from functools import partial
 import jax.random as random
 import jax.numpy as jnp
 INSTANCES = {
-    '2D-Kinetic-Fokker-Planck': kinetic_fokker_planck
+    '2D-Kinetic-Fokker-Planck': kinetic_fokker_planck,
+    '3D-Euler-Poisson'        : euler_poisson
 }
 
 
 class PINN(Method):
-    def __init__(self, pde_instance: KineticFokkerPlanck, args, rng):
+    def __init__(self, pde_instance: ProblemInstance, args, rng):
         self.args = args
         self.pde_instance = pde_instance
 
@@ -41,9 +42,9 @@ class PINN(Method):
         data = self.sample_data(rng_sample)
         # compute function value and gradient
         weights = {
-            "weight_initial": 10,
+            "weight_initial": 1,
             "weight_train": 1,
-            "mass_change": 10
+            "mass_change": 1
         }
         config_train = {
             "ODE_tolerance" : self.args.ODE_tolerance,
@@ -53,14 +54,14 @@ class PINN(Method):
                                                           config=config_train, pde_instance=self.pde_instance)
 
     def sample_data(self, rng):
-        rng_train_t, rng_train_xv, rng_initial = random.split(rng, 3)
+        rng_train_t, rng_train_domain, rng_initial = random.split(rng, 3)
         time_0 = jnp.zeros([self.args.batch_size_initial, 1])
-        data_0 = self.pde_instance.distribution_xv.sample(self.args.batch_size_initial, rng_initial)
+        data_0 = self.pde_instance.distribution_domain.sample(self.args.batch_size_initial, rng_initial)
         density_0 = jnp.exp(self.pde_instance.distribution_0.logdensity(data_0))
 
 
         time_train = self.pde_instance.distribution_t.sample(10, rng_train_t)
-        data_train = self.pde_instance.distribution_xv.sample(self.args.batch_size, rng_train_xv)
+        data_train = self.pde_instance.distribution_domain.sample(self.args.batch_size, rng_train_domain)
         data = {
             "data_initial": (time_0, data_0, density_0),
             "data_train": (time_train, data_train),

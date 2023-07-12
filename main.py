@@ -1,6 +1,6 @@
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
 from config import args_parser
 import optax
 import jax.random as random
@@ -9,11 +9,13 @@ from core.trainer import JaxTrainer
 import jax
 from utils.logging_utils import save_config
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
+from example_problems.euler_poisson_example import EulerPoisson
 from methods.KiNet import KiNet
 from methods.PINN import PINN
 # Example problems
 PDE_INSTANCES = {
-    '2D-Kinetic-Fokker-Planck': KineticFokkerPlanck,
+    '2D-Kinetic-Fokker-Planck'  : KineticFokkerPlanck,
+    '3D-Euler-Poisson'          : EulerPoisson,
 }
 # Methods
 METHODS = {

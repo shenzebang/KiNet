@@ -1,3 +1,5 @@
+from abc import ABC
+
 import jax.numpy as jnp
 import jax.random
 import jax.random as random
@@ -6,7 +8,7 @@ from typing import List
 import warnings
 
 
-class Distribution(object):
+class Distribution(ABC):
     def sample(self, batch_size: int, key):
         raise NotImplementedError
 
@@ -43,7 +45,6 @@ class DistributionKinetic(Distribution):
         logdensity_v = self.distribution_v.logdensity(v)
         logdensity_z = logdensity_x + logdensity_v
         return logdensity_z
-
 
 class Gaussian(Distribution):
     def __init__(self, mu: jnp.ndarray, sigma: jnp.ndarray):

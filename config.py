@@ -11,11 +11,14 @@ def args_parser():
     parser.add_argument('--domain_dim', type=int, default=1, choices=[1, 2, 3], help='only 1D/2D/3D problems are supported now')
     parser.add_argument('--batch_size_initial', type=int, default=1000)
     parser.add_argument('--batch_size_boundary', type=int, default=1000)
+    parser.add_argument('--batch_size_ref', type=int, default=1000)
     parser.add_argument('--batch_size', type=int, default=1000)
+    parser.add_argument('--batch_size_test', type=int, default=10000)
+    parser.add_argument('--batch_size_test_ref', type=int, default=10000)
     parser.add_argument('--log_frequency', type=int, default=100)
 
 
-    parser.add_argument('--dim', type=int, default=2, choices=[2], help='only 2D problems are supported now')
+    parser.add_argument('--dim', type=int, default=2, choices=[2, 3], help='only 2/3D problems are supported now')
     parser.add_argument('--torus_size', type=float, default=20.)
     parser.add_argument('--method', type=str, default='KiNet',
                         choices=['KiNet', 'PINN',])
@@ -23,7 +26,7 @@ def args_parser():
                                                                                     '2D-Navier-Stokes',
                                                                                     '2D-Fokker-Planck',
                                                                                     '2D-Kinetic-Fokker-Planck',
-                                                                                    '3D-McKean-Vlasov',
+                                                                                    '3D-Euler-Poisson',
                                                                                     '2D-Spatially-Homogeneous-Landau'])
     parser.add_argument('--boundary_condition', type=str, default='None', choices=['None',
                                                                                    'Periodic',

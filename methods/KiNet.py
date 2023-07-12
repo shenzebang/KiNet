@@ -1,10 +1,12 @@
 import methods.KiNet_instances.kinetic_fokker_planck as kinetic_fokker_planck
+import methods.KiNet_instances.euler_poisson as euler_poisson
 from api import Method, ProblemInstance
 from functools import partial
 import jax.random as random
 import jax.numpy as jnp
 INSTANCES = {
-    '2D-Kinetic-Fokker-Planck': kinetic_fokker_planck
+    '2D-Kinetic-Fokker-Planck'  : kinetic_fokker_planck,
+    '3D-Euler-Poisson'          : euler_poisson
 }
 
 
@@ -12,16 +14,11 @@ class KiNet(Method):
     def __init__(self, pde_instance: ProblemInstance, args, rng):
         self.args = args
         self.pde_instance = pde_instance
-        self.create_model_fn = INSTANCES[args.PDE].create_model_fn
 
 
     def create_model_fn(self):
-
-        net = INSTANCES[self.args.PDE].create_model_fn()
-        params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(self.pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
-
+        net, params = INSTANCES[self.args.PDE].create_model_fn(self.pde_instance)
         return net, params
-
 
 
     def test_fn(self, forward_fn, params, rng):
@@ -53,7 +50,9 @@ class KiNet(Method):
                                                           config=config_train, pde_instance=self.pde_instance)
 
     def sample_data(self, rng):
+        rng_initial, rng_ref = random.split(rng, 2)
         data = {
-            "data_initial": self.pde_instance.distribution_0.sample(self.args.batch_size_initial, rng)
+            "data_initial"  : self.pde_instance.distribution_0.sample(self.args.batch_size_initial, rng_initial),
+            "data_ref"      : self.pde_instance.distribution_0.sample(self.args.batch_size_ref, rng_ref),
         }
         return data

@@ -7,6 +7,7 @@ from jax.experimental.ode import odeint
 from utils.plot_utils import plot_scatter_2d
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from core.model import KiNet
+import jax.random as random
 
 def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
     # unpack the parameters
@@ -262,6 +263,9 @@ def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
 
     return {"KL": KL, "Fisher Information": Fisher_information}
 
-def create_model_fn():
-    return KiNet()
+def create_model_fn(pde_instance: KineticFokkerPlanck):
+    net = KiNet(time_embedding_dim=20, append_time=False)
+    params = net.init(random.PRNGKey(11), jnp.zeros(1),
+                      jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+    return net, params
 
