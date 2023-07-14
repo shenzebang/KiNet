@@ -80,7 +80,8 @@ class EulerPoisson(ProblemInstance):
         # use particle method to generate the test dataset
         # 1. sample particles from the initial distribution
         x_test = self.distribution_0.sample(self.args.batch_size_test_ref, random.PRNGKey(1234))
-        x_test = jax.device_put(x_test, jax.devices("gpu")[1])
+        if jax.devices()[0].platform == "gpu":
+            x_test = jax.device_put(x_test, jax.devices("gpu")[1])
         v_test = self.u_0(x_test)
         z_test = jnp.concatenate([x_test, v_test], axis=-1)
         # 2. evolve the system to t = self.total_evolving_time
@@ -106,10 +107,9 @@ class EulerPoisson(ProblemInstance):
         x_T, v_T = jnp.split(z_T, indices_or_sections=2, axis=-1)
 
         print(f"preparing the ground truth by running the particle method with {self.args.batch_size_test_ref} particles.")
-
-        x_T = jax.device_put(x_T, jax.devices("gpu")[0])
-        v_T = jax.device_put(v_T, jax.devices("gpu")[0])
-        gc.collect()
+        if jax.devices()[0].platform == "gpu":
+            x_T = jax.device_put(x_T, jax.devices("gpu")[0])
+            v_T = jax.device_put(v_T, jax.devices("gpu")[0])
         return {"x_T": x_T, "v_T": v_T}
 
 

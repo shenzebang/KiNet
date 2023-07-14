@@ -11,11 +11,6 @@ INSTANCES = {
 
 
 class KiNet(Method):
-    def __init__(self, pde_instance: ProblemInstance, args, rng):
-        self.args = args
-        self.pde_instance = pde_instance
-
-
     def create_model_fn(self):
         net, params = INSTANCES[self.args.PDE].create_model_fn(self.pde_instance)
         return net, params

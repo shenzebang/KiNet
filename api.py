@@ -2,6 +2,9 @@ from core.distribution import Distribution
 import jax.numpy as jnp
 import flax.linen as nn
 from typing import Dict
+from argparse import Namespace
+from jax.random import KeyArray
+from dataclasses import dataclass
 
 
 class ProblemInstance:
@@ -16,10 +19,12 @@ class ProblemInstance:
         # Should return the test time stamp and the corresponding ground truth
         pass
 
-
+@dataclass
 class Method:
     # model: nn.Module
     pde_instance: ProblemInstance
+    args: Namespace
+    rng: KeyArray
 
     def value_and_grad_fn(self, forward_fn, params, rng):
         # the data generating process should be handled within this function

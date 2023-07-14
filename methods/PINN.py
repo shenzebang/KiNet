@@ -11,10 +11,6 @@ INSTANCES = {
 
 
 class PINN(Method):
-    def __init__(self, pde_instance: ProblemInstance, args, rng):
-        self.args = args
-        self.pde_instance = pde_instance
-
     def create_model_fn(self):
         return INSTANCES[self.args.PDE].create_model_fn(self.pde_instance)
 
