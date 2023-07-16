@@ -10,12 +10,14 @@ import jax
 from utils.logging_utils import save_config
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from example_problems.euler_poisson_example import EulerPoisson
+from example_problems.flocking_example import Flocking
 from methods.KiNet import KiNet
 from methods.PINN import PINN
 # Example problems
 PDE_INSTANCES = {
     '2D-Kinetic-Fokker-Planck'  : KineticFokkerPlanck,
     '3D-Euler-Poisson'          : EulerPoisson,
+    '3D-Flocking'               : Flocking,
 }
 # Methods
 METHODS = {
@@ -44,7 +46,7 @@ if __name__ == '__main__':
     net, params = method.create_model_fn()
 
     # create optimizer
-    optimizer = optax.chain(optax.adaptive_grad_clip(1.0), optax.adam(learning_rate=args.learning_rate))
+    optimizer = optax.chain(optax.adaptive_grad_clip(0.1), optax.adam(learning_rate=args.learning_rate))
 
     # Construct the JaxTrainer
     trainer = JaxTrainer(args=args, method=method, rng=rng_trainer, save_directory=save_directory, forward_fn=net.apply, params=params, optimizer=optimizer)

@@ -99,6 +99,16 @@ class Gaussian(Distribution):
     def density(self, x: jnp.ndarray):
         return jnp.exp(self.logdensity(x))
 
+class Uniform_over_3d_Ball(Distribution):
+    def __init__(self, r):
+        self.r = r
+
+    def sample(self, batch_size: int, key):
+        return jax.random.ball(key, d=3, p=2, shape=[batch_size]) * self.r
+
+    def score(self, x: jnp.ndarray):
+        return jnp.zeros_like(x)
+
 
 class GaussianMixture(Distribution):
     def __init__(self, mus: List[jnp.ndarray], sigmas: List[jnp.ndarray]):
