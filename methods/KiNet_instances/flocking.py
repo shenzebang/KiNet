@@ -27,13 +27,12 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
     def bar_f(_z, _t, _params):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
-        dv = forward_fn(_params, _t, x)
+        dv = forward_fn(_params, _t, _z)
         dz = jnp.concatenate([dx, dv], axis=-1)
         return dz
 
     def f(_z, _t, _params):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        dv_pred = forward_fn(_params, _t, x)
+        dv_pred = forward_fn(_params, _t, _z)
         return dv_pred
 
     # compute x(T) by solve IVP (I)
@@ -100,14 +99,13 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
             return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref)) ** 2, axis=(1,)))
 
         dxg = grad(g_t, argnums=0)
-        dxrefg = grad(g_t, argnums=1)
-        dthetag = grad(g_t, argnums=2)
+        dthetag = grad(g_t, argnums=1)
 
-        da = - vjp_fx_a - dxg(z, z_ref, params)
+        da = - vjp_fx_a - dxg(z, params)
         dloss = g_t(z, params)
 
         vjp_ftheta_a_flat, _ = tree_flatten(vjp_ftheta_a)
-        dthetag_flat, _ = tree_flatten(dthetag(z, z_ref, params))
+        dthetag_flat, _ = tree_flatten(dthetag(z, params))
         dgrad = [_dgrad1 + _dgrad2 for _dgrad1, _dgrad2
                  in zip(vjp_ftheta_a_flat, dthetag_flat)]
 
@@ -150,7 +148,7 @@ def test_fn(forward_fn, config, pde_instance: Flocking, rng):
     acceleration_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, z_ground_truth)
     acceleration_true = pde_instance.ground_truth(z_ground_truth)
     relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((acceleration_pred - acceleration_true) ** 2, axis=-1)))
-    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum((acceleration_true) ** 2, axis=-1)))
+    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(acceleration_true ** 2, axis=-1)))
 
     return {"relative l2 error": relative_l2}
 

@@ -85,7 +85,7 @@ class EulerPoisson(ProblemInstance):
         # 1. sample particles from the initial distribution
         x_test = self.distribution_0.sample(self.args.batch_size_test_ref, random.PRNGKey(1234))
         if jax.devices()[0].platform == "gpu":
-            x_test = jax.device_put(x_test, jax.devices("gpu")[1])
+            x_test = jax.device_put(x_test, jax.devices("gpu")[-1])
         v_test = self.u_0(x_test)
         z_test = jnp.concatenate([x_test, v_test], axis=-1)
         # 2. evolve the system to t = self.total_evolving_time

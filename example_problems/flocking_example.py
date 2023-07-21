@@ -7,23 +7,23 @@ from jax.experimental.ode import odeint
 import gc
 import warnings
 
-Sigma_x_0 = jnp.diag(jnp.array([1., 1.]))
-mu_x_0 = jnp.array([2., 2.])
+Sigma_x_0 = jnp.diag(jnp.array([1., 1., 1.]))
+mu_x_0 = jnp.array([2., 2., 2.])
 distribution_x_0 = Gaussian(mu_x_0, Sigma_x_0)
 
-Sigma_v_0 = jnp.diag(jnp.array([1, 1]))
-mu_v_0 = jnp.array([0., 0.])
+Sigma_v_0 = jnp.diag(jnp.array([1., 1., 1.]))
+mu_v_0 = jnp.array([0., 0., 0.])
 distribution_v_0 = Gaussian(mu_v_0, Sigma_v_0)
 # =============================================
 
 # =============================================
 # Flocking Kernel in 3D!
-beta = 1
+beta = .2
 def K_fn(z1: jnp.ndarray, z2: jnp.ndarray):
     dz = z1 - z2
     dx, dv = jnp.split(dz, indices_or_sections=2, axis=-1)
-    dv_norm2 = jnp.sum(dv ** 2, axis=-1)
-    return dv / (1+dv_norm2) ** (-beta)
+    dx_norm2 = jnp.sum(dx ** 2, axis=-1)
+    return -dv / (1+dx_norm2) ** beta
 
 K_fn_vmapy = jax.vmap(K_fn, in_axes=[None, 0])
 
