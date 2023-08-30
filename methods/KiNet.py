@@ -8,6 +8,7 @@ import jax.numpy as jnp
 INSTANCES = {
     '2D-Kinetic-Fokker-Planck'  : kinetic_fokker_planck,
     '3D-Euler-Poisson'          : euler_poisson,
+    '3D-Euler-Poisson-Drift'    : euler_poisson,
     '3D-Flocking'               : flocking,
 }
 

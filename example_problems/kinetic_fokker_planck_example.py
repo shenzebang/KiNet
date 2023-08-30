@@ -63,6 +63,7 @@ def eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, time_st
 
 class KineticFokkerPlanck(ProblemInstance):
     def __init__(self, args, rng):
+        super().__init__(args, rng)
         self.diffusion_coefficient = jnp.ones([]) * args.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * args.total_evolving_time
         self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)

@@ -28,7 +28,7 @@ def args_parser():
                                                                                     '2D-Kinetic-Fokker-Planck',
                                                                                     '3D-Euler-Poisson',
                                                                                     '3D-Flocking',
-                                                                                    '2D-Spatially-Homogeneous-Landau'])
+                                                                                    '3D-Euler-Poisson-Drift'])
     parser.add_argument('--boundary_condition', type=str, default='None', choices=['None',
                                                                                    'Periodic',
                                                                                    'Neumann'])

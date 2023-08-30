@@ -10,8 +10,6 @@ from core.model import KiNet
 import jax.random as random
 
 
-
-
 def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: EulerPoisson):
     # unpack the parameters
     ODE_tolerance = config["ODE_tolerance"]
@@ -27,14 +25,13 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
     def bar_f(_z, _t, _params):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
-        dv = forward_fn(_params, _t, x)
+        dv = forward_fn(_params, _t, x) + pde_instance.drift_term(_t, x)
         dz = jnp.concatenate([dx, dv], axis=-1)
         return dz
 
     def f(_z, _t, _params):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        score = forward_fn(_params, _t, x)
-        return score
+        return forward_fn(_params, _t, x)
 
     # compute x(T) by solve IVP (I)
     # ================ Forward ===================
@@ -48,10 +45,10 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
         dz_ref = bar_f(z_ref, t, params)
 
         def g_t(_z):
-            acceleration = f(_z, t, params)
+            conv_pred = f(_z, t, params)
             _x, _ = jnp.split(_z, indices_or_sections=2, axis=-1)
             _x_ref, _ = jnp.split(z_ref, indices_or_sections=2, axis=-1)
-            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(_x, _x_ref)) ** 2, axis=(1,)))
+            return jnp.mean(jnp.sum((conv_pred - conv_fn_vmap(_x, _x_ref)) ** 2, axis=-1))
 
         dloss = g_t(z)
 
@@ -97,10 +94,11 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
 
 
         def g_t(_z, _z_ref, _params):
-            acceleration = f_t(_z, _params)
+            conv_pred = f_t(_z, _params)
             _x, _ = jnp.split(_z, indices_or_sections=2, axis=-1)
             _x_ref, _ =  jnp.split(_z_ref, indices_or_sections=2, axis=-1)
-            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(_x, _x_ref)) ** 2, axis=(1,)))
+
+            return jnp.mean(jnp.sum((conv_pred - conv_fn_vmap(_x, _x_ref)) ** 2, axis=-1))
 
         dxg = grad(g_t, argnums=0)
         dxrefg = grad(g_t, argnums=1)
@@ -146,10 +144,10 @@ def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
 
 def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
     x_ground_truth = pde_instance.test_data["x_T"]
-    acceleration_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, x_ground_truth)
-    acceleration_true = pde_instance.ground_truth(x_ground_truth)
-    relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((acceleration_pred - acceleration_true) ** 2, axis=-1)))
-    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum((acceleration_true) ** 2, axis=-1)))
+    conv_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, x_ground_truth)
+    conv_true = pde_instance.ground_truth(x_ground_truth)
+    relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((conv_pred - conv_true) ** 2, axis=-1)))
+    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(conv_true ** 2, axis=-1)))
 
     return {"relative l2 error": relative_l2}
 

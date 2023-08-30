@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 from api import ProblemInstance
-from core.distribution import Uniform, Gaussian, DistributionKinetic, Uniform_over_3d_Ball
+from core.distribution import Uniform, Uniform_over_3d_Ball
 import jax.random as random
 import jax
 from jax.experimental.ode import odeint
@@ -58,9 +58,12 @@ def conv_fn(x: jnp.ndarray, y: jnp.ndarray):
 conv_fn_vmap = jax.vmap(conv_fn, in_axes=[0, None])
 # =============================================
 
+def drift_term(t: jnp.ndarray, x: jnp.ndarray):
+    return jnp.zeros([])
+
 class EulerPoisson(ProblemInstance):
     def __init__(self, args, rng):
-        self.args = args
+        super().__init__(args, rng)
         self.diffusion_coefficient = jnp.ones([]) * args.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * args.total_evolving_time
         self.distribution_x_0 = distribution_x_0
@@ -76,11 +79,17 @@ class EulerPoisson(ProblemInstance):
         self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * args.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
+        self.drift_term = self.get_drift_term()
         self.test_data = self.prepare_test_data()
 
         # self.run_particle_method_baseline()
 
+    def get_drift_term(self):
+        return drift_term
+
     def prepare_test_data(self):
+        print(f"Using the instance {self.instance_name}. No closed form solution. "
+              f"Use particle method to generate the test dataset.")
         # use particle method to generate the test dataset
         # 1. sample particles from the initial distribution
         x_test = self.distribution_0.sample(self.args.batch_size_test_ref, random.PRNGKey(1234))

@@ -36,7 +36,7 @@ conv_fn_vmap = jax.vmap(conv_fn, in_axes=[0, None])
 
 class Flocking(ProblemInstance):
     def __init__(self, args, rng):
-        self.args = args
+        super().__init__(args, rng)
         self.diffusion_coefficient = jnp.ones([]) * args.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * args.total_evolving_time
         self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)

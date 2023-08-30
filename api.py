@@ -14,6 +14,11 @@ class ProblemInstance:
     diffusion_coefficient: jnp.ndarray = 0.
     mins: jnp.ndarray
     maxs: jnp.ndarray
+    instance_name: str
+
+    def __init__(self, args, rng):
+        self.args = args
+        self.instance_name = self.args.PDE
 
     def ground_truth(self, xs: jnp.ndarray):
         # Should return the test time stamp and the corresponding ground truth
