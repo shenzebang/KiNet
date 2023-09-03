@@ -7,7 +7,7 @@ from jax.experimental.ode import odeint
 import gc
 import warnings
 
-t_0 = 1/10
+t_0 = 1
 
 threshold_0 = (3/4/jnp.pi * t_0) ** (1/3)
 # =============================================
@@ -30,10 +30,10 @@ def K_fn(x: jnp.ndarray, y: jnp.ndarray):
 
     dx = x - y
     norm2 = jnp.sum(dx ** 2)
-    norm = jnp.maximum(jnp.sqrt(norm2), 1e-9)
-    norm2 = jnp.maximum(norm2, 1e-4)
+    norm = jnp.maximum(jnp.sqrt(norm2), 1e-4)
+    # norm2 = jnp.maximum(norm2, 1e-4)
     # norm2 = jnp.sum(dx ** 2)
-    return dx / norm / norm2 / 4 / jnp.pi
+    return dx / norm / norm**2 / 4 / jnp.pi
     # dx = x - y
     # norm2 = jnp.sum(dx**2)
     # norm = jnp.sqrt(norm2)

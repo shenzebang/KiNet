@@ -1,6 +1,6 @@
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from config import args_parser
 import optax
 import jax.random as random
@@ -48,7 +48,8 @@ if __name__ == '__main__':
     net, params = method.create_model_fn()
 
     # create optimizer
-    optimizer = optax.chain(optax.adaptive_grad_clip(0.1), optax.adam(learning_rate=args.learning_rate))
+    # optimizer = optax.chain(optax.adaptive_grad_clip(0.1), optax.adam(learning_rate=args.learning_rate))
+    optimizer = optax.chain(optax.adaptive_grad_clip(1), optax.add_decayed_weights(0.001), optax.sgd(learning_rate=args.learning_rate, momentum=.9))
 
     # Construct the JaxTrainer
     trainer = JaxTrainer(args=args, method=method, rng=rng_trainer, save_directory=save_directory, forward_fn=net.apply, params=params, optimizer=optimizer)

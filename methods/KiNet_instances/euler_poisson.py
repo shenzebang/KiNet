@@ -6,140 +6,148 @@ from utils.common_utils import divergence_fn
 from jax.experimental.ode import odeint
 from utils.plot_utils import plot_scatter_2d
 from example_problems.euler_poisson_example import EulerPoisson, conv_fn_vmap
-from core.model import KiNet
+from core.model import KiNet, KiNet_Debug, KiNet_Debug_2
 import jax.random as random
 
 
-def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: EulerPoisson):
+def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoisson):
     # unpack the parameters
-    ODE_tolerance = config["ODE_tolerance"]
     T = pde_instance.total_evolving_time
     # unpack the data
     x_0, x_ref = data["data_initial"], data["data_ref"]
     v_0, v_ref = pde_instance.u_0(x_0), pde_instance.u_0(x_ref)
-    z_0 = jnp.concatenate([x_0, v_0], axis=-1)
-    z_ref = jnp.concatenate([x_ref, v_ref], axis=-1)
 
     params_flat, params_tree = tree_flatten(params)
 
-    def bar_f(_z, _t, _params):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
+    def hypothesis_velocity_field_fn(z, t, _params):
+        x, v = jnp.split(z, indices_or_sections=2, axis=-1)
         dx = v
-        dv = forward_fn(_params, _t, x) + pde_instance.drift_term(_t, x)
+        dv = forward_fn(_params, t, x) + pde_instance.drift_term(t, x)
         dz = jnp.concatenate([dx, dv], axis=-1)
         return dz
 
-    def f(_z, _t, _params):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        return forward_fn(_params, _t, x)
+    def conv_pred_fn(z, t, _params):
+        x, v = jnp.split(z, indices_or_sections=2, axis=-1)
+        return forward_fn(_params, t, x)
 
     # compute x(T) by solve IVP (I)
     # ================ Forward ===================
-    loss_0 = jnp.zeros([])
-    states_0 = [z_0, z_ref, loss_0]
+    states_0 = {
+        "z": jnp.concatenate([x_0, v_0], axis=-1),
+        "ref": jnp.concatenate([x_ref, v_ref], axis=-1),
+        "loss": jnp.zeros([]),
+    }
 
     def ode_func1(states, t):
-        z = states[0]
-        z_ref = states[1]
-        dz = bar_f(z, t, params)
-        dz_ref = bar_f(z_ref, t, params)
+        def g_t(z, ref):
+            x, _ = jnp.split(z, indices_or_sections=2, axis=-1)
+            x_ref, _ = jnp.split(ref, indices_or_sections=2, axis=-1)
+            conv_pred = conv_pred_fn(z, t, params)
+            conv = conv_fn_vmap(x, x_ref)
+            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1) / jnp.sum(conv ** 2, axis=-1))
 
-        def g_t(_z):
-            conv_pred = f(_z, t, params)
-            _x, _ = jnp.split(_z, indices_or_sections=2, axis=-1)
-            _x_ref, _ = jnp.split(z_ref, indices_or_sections=2, axis=-1)
-            return jnp.mean(jnp.sum((conv_pred - conv_fn_vmap(_x, _x_ref)) ** 2, axis=-1))
-
-        dloss = g_t(z)
-
-        return [dz, dz_ref, dloss]
+        return {
+            "z": hypothesis_velocity_field_fn(states["z"], t, params),
+            "ref": hypothesis_velocity_field_fn(states["ref"], t, params),
+            "loss": g_t(states["z"], states["ref"])
+        }
 
     tspace = jnp.array((0., T))
-    result_forward = odeint(ode_func1, states_0, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
-    z_T = result_forward[0][1]
-    z_ref_T = result_forward[1][1]
-    loss_f = result_forward[2][1]
+    result_forward = odeint(ode_func1, states_0, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
+    loss_f = result_forward["loss"][-1]
     # ================ Forward ===================
 
     # ================ Backward ==================
     # compute dl/d theta via adjoint method
-    a_T = jnp.zeros_like(z_T)
-    b_T = jnp.zeros_like(z_ref_T)
-    grad_T = [jnp.zeros_like(_var) for _var in params_flat]
-    loss_T = jnp.zeros([])
-    states_T = [z_T, z_ref_T, a_T, b_T, loss_T, grad_T]
+    states_T = {
+        "z": result_forward["z"][-1],
+        "ref": result_forward["ref"][-1],
+        "a": jnp.zeros_like(states_0["z"]),
+        "b": jnp.zeros_like(states_0["ref"]),
+        "grad": [jnp.zeros_like(_var) for _var in params_flat],
+        "loss": jnp.zeros([])
+    }
+
 
     def ode_func2(states, t):
         t = T - t
-        z = states[0]
-        z_ref = states[1]
-        a = states[2]
-        b = states[3]
 
-        f_t = lambda _x, _params: f(_x, t, _params)
-        bar_f_t = lambda _x, _params: bar_f(_x, t, _params)
-        dz = bar_f_t(z, params)
-        dz_ref = bar_f_t(z_ref, params)
+        f_t = lambda _z, _params: conv_pred_fn(_z, t, _params)
+        bar_f_t = lambda _z, _params: hypothesis_velocity_field_fn(_z, t, _params)
 
 
-        _, vjp_fx_fn = vjp(lambda _x: bar_f_t(_x, params), z)
-        vjp_fx_a = vjp_fx_fn(a)[0]
-        _, vjp_ftheta_fn = vjp(lambda _params: bar_f_t(z, _params), params)
-        vjp_ftheta_a = vjp_ftheta_fn(a)[0]
+        _, vjp_fx_fn = vjp(lambda _z: bar_f_t(_z, params), states["z"])
+        vjp_fx_a = vjp_fx_fn(states["a"])[0]
+        _, vjp_ftheta_fn = vjp(lambda _params: bar_f_t(states["z"], _params), params)
+        vjp_ftheta_a = vjp_ftheta_fn(states["a"])[0]
 
-        _, vjp_fxref_fn = vjp(lambda _x: bar_f_t(_x, params), z_ref)
-        vjp_fxref_b = vjp_fxref_fn(b)[0]
-        _, vjp_ftheta_fn = vjp(lambda _params: bar_f_t(z_ref, _params), params)
-        vjp_ftheta_b = vjp_ftheta_fn(b)[0]
+        _, vjp_fxref_fn = vjp(lambda _x: bar_f_t(_x, params), states["ref"])
+        vjp_fxref_b = vjp_fxref_fn(states["b"])[0]
+        _, vjp_ftheta_fn = vjp(lambda _params: bar_f_t(states["ref"], _params), params)
+        vjp_ftheta_b = vjp_ftheta_fn(states["b"])[0]
 
 
-        def g_t(_z, _z_ref, _params):
-            conv_pred = f_t(_z, _params)
-            _x, _ = jnp.split(_z, indices_or_sections=2, axis=-1)
-            _x_ref, _ =  jnp.split(_z_ref, indices_or_sections=2, axis=-1)
-
-            return jnp.mean(jnp.sum((conv_pred - conv_fn_vmap(_x, _x_ref)) ** 2, axis=-1))
+        def g_t(z, ref, _params):
+            x, _ = jnp.split(z, indices_or_sections=2, axis=-1)
+            x_ref, _ =  jnp.split(ref, indices_or_sections=2, axis=-1)
+            conv_pred = f_t(z, _params)
+            conv = conv_fn_vmap(x, x_ref)
+            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1))
 
         dxg = grad(g_t, argnums=0)
         dxrefg = grad(g_t, argnums=1)
         dthetag = grad(g_t, argnums=2)
 
-        da = - vjp_fx_a - dxg(z, z_ref, params)
-        db = - vjp_fxref_b - dxrefg(z, z_ref, params)
-        dloss = g_t(z, z_ref, params)
+        da = - vjp_fx_a - dxg(states["z"], states["ref"], params)
+        db = - vjp_fxref_b - dxrefg(states["z"], states["ref"], params)
 
         vjp_ftheta_a_flat, _ = tree_flatten(vjp_ftheta_a)
         vjp_ftheta_b_flat, _ = tree_flatten(vjp_ftheta_b)
-        dthetag_flat, _ = tree_flatten(dthetag(z, z_ref, params))
+        dthetag_flat, _ = tree_flatten(dthetag(states["z"], states["ref"], params))
         dgrad = [_dgrad1 + _dgrad2 + _dgrad3 for _dgrad1, _dgrad2, _dgrad3
                  in zip(vjp_ftheta_a_flat, vjp_ftheta_b_flat, dthetag_flat)]
 
-        return [-dz, -dz_ref, -da, -db, dloss, dgrad]
+        return {
+            "z": -bar_f_t(states["z"], params),
+            "ref": -bar_f_t(states["ref"], params),
+            "a": -da,
+            "b": -db,
+            "loss": g_t(states["z"], states["ref"], params),
+            "grad": dgrad,
+        }
 
     # ================ Backward ==================
     tspace = jnp.array((0., T))
-    result_backward = odeint(ode_func2, states_T, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
+    result_backward = odeint(ode_func2, states_T, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
 
-    grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward[5]])
-    # x_0_b = result_backward[0][-1]
-    # ref_0_b = result_backward[6][-1]
-    # xi_0_b = result_backward[3][-1]
-
-    # These quantities are for the purpose of debug
-    # error_x = jnp.mean(jnp.sum((x_0_b - x_0).reshape(x_0.shape[0], -1) ** 2, axis=(1,)))
-    # error_xi = jnp.mean(jnp.sum((xi_0 - xi_0_b).reshape(xi_0.shape[0], -1) ** 2, axis=(1,)))
-    # error_ref = jnp.mean(jnp.sum((ref_0 - ref_0_b).reshape(ref_0.shape[0], -1) ** 2, axis=(1,)))
-    # loss_b = result_backward[4][-1]
-
-    return loss_f, grad_T
-
-
-# choose either stochastic gradient estimator or the exact one.
-value_and_grad_fn = value_and_grad_fn_exact
+    return {
+        "loss": loss_f,
+        "grad": tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]]),
+        "ODE error x": jnp.mean(jnp.sum((result_backward["z"][-1] - states_0["z"]) ** 2, axis=-1)),
+        "ODE error ref": jnp.mean(jnp.sum((result_backward["ref"][-1] - states_0["ref"]) ** 2, axis=-1)),
+    }
 
 
 def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
-    pass
+    def hypothesis_velocity_field_fn(_z, _t):
+        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
+        dx = v
+        dv = forward_fn(_t, x) + pde_instance.drift_term(_t, x)
+        dz = jnp.concatenate([dx, dv], axis=-1)
+        return dz
+
+    mins = pde_instance.mins
+    maxs = pde_instance.maxs
+
+    x_0 = pde_instance.distribution_0.sample(10000, random.PRNGKey(123))
+    states_0 = {"z": jnp.concatenate([x_0, pde_instance.u_0(x_0)], axis=-1)}
+
+    def ode_func1(states, t):
+        return {"z": hypothesis_velocity_field_fn(states["z"], t)}
+
+    tspace = jnp.linspace(0, pde_instance.total_evolving_time, 11)
+    result_forward = odeint(ode_func1, states_0, tspace, atol=1e-4, rtol=1e-4)
+    z_0T = result_forward["z"]
 
 
 def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
@@ -153,8 +161,9 @@ def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
 
 
 def create_model_fn(pde_instance: EulerPoisson):
-    net = KiNet(output_dim=3, time_embedding_dim=0, append_time=True)
-    params = net.init(random.PRNGKey(11), jnp.zeros(1),
-                      jnp.squeeze(pde_instance.distribution_x_0.sample(1, random.PRNGKey(1))))
+    net = KiNet(output_dim=3, time_embedding_dim=0)
+    # net = KiNet_Debug(output_dim=3, time_embedding_dim=0)
+    # net = KiNet_Debug_2(output_dim=3, time_embedding_dim=0)
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_x_0.sample(1, random.PRNGKey(1)))
     return net, params
 

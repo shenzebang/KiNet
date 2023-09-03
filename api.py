@@ -15,10 +15,12 @@ class ProblemInstance:
     mins: jnp.ndarray
     maxs: jnp.ndarray
     instance_name: str
+    dim: int
 
     def __init__(self, args, rng):
         self.args = args
         self.instance_name = self.args.PDE
+        self.dim = args.domain_dim
 
     def ground_truth(self, xs: jnp.ndarray):
         # Should return the test time stamp and the corresponding ground truth

@@ -7,6 +7,9 @@ def drift_term(t: jnp.ndarray, x: jnp.ndarray):
     t = t + t_0
     return - 2 * x / 9 / t ** 2 - x / 3 / t
 
+def u_0(x: jnp.ndarray):
+    return x / 3 / t_0
+
 def coulomb_potential_uniform_fn(t: jnp.ndarray, xi: jnp.ndarray):
     xi_norm_2 = jnp.sum(xi ** 2)
     xi_norm = jnp.sqrt(xi_norm_2)
@@ -17,19 +20,20 @@ def coulomb_potential_uniform_fn(t: jnp.ndarray, xi: jnp.ndarray):
     ]
     functions = [
         (2 * threshold_t ** 2 - xi_norm_2)/6/(t+t_0),
-        1 / 8 /jnp.pi / xi_norm
+        1 / 4 /jnp.pi / xi_norm
     ]
     return jnp.piecewise(xi_norm, conditions, functions)
 
 def ground_truth_op_uniform(t: jnp.ndarray, x: jnp.ndarray):
     coulomb_field_uniform = jax.grad(coulomb_potential_uniform_fn, argnums=1)
-    return -coulomb_field_uniform(t[0], x)
+    return -coulomb_field_uniform(t, x)
 
 ground_truth_op_vmapx = jax.vmap(ground_truth_op_uniform, in_axes=[None, 0])
 
 class EulerPoissonWithDrift(EulerPoisson):
     def __init__(self, args, rng):
         super(EulerPoissonWithDrift, self).__init__(args, rng)
+        self.u_0 = u_0
 
     def get_drift_term(self):
         return drift_term
@@ -41,3 +45,6 @@ class EulerPoissonWithDrift(EulerPoisson):
 
     def ground_truth(self, xs: jnp.ndarray):
         return ground_truth_op_vmapx(self.total_evolving_time, xs)
+
+    # def ground_truth_t(self, xs: jnp.ndarray, t: jnp.ndarray):
+

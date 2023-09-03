@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import math
 
 
 
@@ -55,3 +56,11 @@ def _gaussian_log_density(x, Sigma, mu):
 v_gaussian_log_density = jax.vmap(_gaussian_log_density, in_axes=[0, None, None])
 
 v_matmul = jax.vmap(jnp.matmul, in_axes=(None, 0))
+
+
+def volume_nd_ball(d: int):
+    k = d // 2
+    if d % 2 == 0:
+        return jnp.pi ** k / math.factorial(k)
+    else:
+        return 2 * math.factorial(k) * ((4 * jnp.pi) ** k) / math.factorial(d)
