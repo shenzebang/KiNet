@@ -49,7 +49,13 @@ if __name__ == '__main__':
 
     # create optimizer
     # optimizer = optax.chain(optax.adaptive_grad_clip(0.1), optax.adam(learning_rate=args.learning_rate))
-    optimizer = optax.chain(optax.adaptive_grad_clip(1), optax.add_decayed_weights(0.001), optax.sgd(learning_rate=args.learning_rate, momentum=.9))
+    optimizer = optax.chain(optax.adaptive_grad_clip(1), optax.add_decayed_weights(0.01), optax.sgd(learning_rate=args.learning_rate, momentum=.9))
+    # lr_schedule = optax.cosine_decay_schedule(args.learning_rate, 20000, 0.1)
+    # optimizer = optax.chain(optax.adaptive_grad_clip(1),
+    #                         optax.add_decayed_weights(0.01),
+    #                         optax.sgd(learning_rate=lr_schedule, momentum=.9)
+    #                         )
+
 
     # Construct the JaxTrainer
     trainer = JaxTrainer(args=args, method=method, rng=rng_trainer, save_directory=save_directory, forward_fn=net.apply, params=params, optimizer=optimizer)

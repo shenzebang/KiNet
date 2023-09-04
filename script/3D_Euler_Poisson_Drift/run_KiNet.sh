@@ -8,7 +8,7 @@ args=(--PDE 3D-Euler-Poisson-Drift
       --batch_size_initial 100
       --batch_size_ref 50000
       --batch_size_test_ref 60000
-      --ODE_tolerance 1e-5
+      --ODE_tolerance 1e-6
       --test_frequency 50
       --plot_frequency 99999
 )
