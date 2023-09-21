@@ -15,11 +15,10 @@ def args_parser():
     parser.add_argument('--batch_size', type=int, default=1000)
     parser.add_argument('--batch_size_test', type=int, default=10000)
     parser.add_argument('--batch_size_test_ref', type=int, default=10000)
-    parser.add_argument('--log_frequency', type=int, default=100)
+
 
 
     parser.add_argument('--dim', type=int, default=2, choices=[2, 3], help='only 2/3D problems are supported now')
-    parser.add_argument('--torus_size', type=float, default=20.)
     parser.add_argument('--method', type=str, default='KiNet',
                         choices=['KiNet', 'PINN',])
     parser.add_argument('--PDE', type=str, default='2D-Navier-Stokes', choices=[    '1D-Burgers',
@@ -33,22 +32,10 @@ def args_parser():
                                                                                    'Periodic',
                                                                                    'Neumann'])
     parser.add_argument('--diffusion_coefficient', type=float, default=0.)
-    parser.add_argument('--reg_f', type=float, default=0.)
-    parser.add_argument('--exponential_ratio', type=float, default=0.)
     parser.add_argument('--init_weight', type=float, default=1.)
     parser.add_argument('--total_mass_weight', type=float, default=1.)
     parser.add_argument('--mass_change_weight', type=float, default=1.)
     parser.add_argument('--total_evolving_time', type=float, default=2.)
-
-    parser.add_argument('--setting', type=str, default='None', choices=['Lamb-Oseen',
-                                                                        'None'])
-
-    #### These parameters are only used for the 2D Lamb-Oseen Vortex model
-    parser.add_argument('--Lamb_Oseen_Re', type=float, default=10, help='The Reynolds number')
-    parser.add_argument('--Lamb_Oseen_t0', type=float, default=1e-3,
-                        help='The starting time of the Lamb-Oseen vortex model. This voids the singularity at time 0.')
-    parser.add_argument('--Lamb_Oseen_test_op', type=str, default='relative_l2', choices=['KL',
-                                                                                 'relative_l2'])
 
 
     ## network configuration
@@ -74,8 +61,10 @@ def args_parser():
     parser.add_argument('--test_batch_size', type=int, default=1024)
     parser.add_argument('--test_domain_size', type=float, default=10.)
     parser.add_argument('--test_frequency', type=int, default=100)
+    parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--plot_frequency', type=int, default=100)
     parser.add_argument('--plot_domain_size', type=float, default=2.)
+    parser.add_argument('--log_frequency', type=int, default=100)
 
     ## save/load
     parser.add_argument('--load_model', action='store_true', help='load a pretrained model')

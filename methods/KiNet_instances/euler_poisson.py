@@ -1,12 +1,12 @@
 import jax
 from jax.tree_util import tree_flatten, tree_unflatten
-from jax import grad, vjp
+from jax import vjp
 import jax.numpy as jnp
-from utils.common_utils import divergence_fn
+from utils.common_utils import divergence_fn, compute_pytree_norm
 from jax.experimental.ode import odeint
 from utils.plot_utils import plot_scatter_2d
 from example_problems.euler_poisson_example import EulerPoisson, conv_fn_vmap
-from core.model import KiNet, KiNet_Debug, KiNet_Debug_2
+from core.model import get_model
 import jax.random as random
 
 
@@ -44,7 +44,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
             x_ref, _ = jnp.split(ref, indices_or_sections=2, axis=-1)
             conv_pred = conv_pred_fn(z, t, params)
             conv = conv_fn_vmap(x, x_ref)
-            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1) / jnp.sum(conv ** 2, axis=-1))
+            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1))
 
         return {
             "z": hypothesis_velocity_field_fn(states["z"], t, params),
@@ -94,9 +94,9 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
             conv = conv_fn_vmap(x, x_ref)
             return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1))
 
-        dxg = grad(g_t, argnums=0)
-        dxrefg = grad(g_t, argnums=1)
-        dthetag = grad(g_t, argnums=2)
+        dxg = jax.grad(g_t, argnums=0)
+        dxrefg = jax.grad(g_t, argnums=1)
+        dthetag = jax.grad(g_t, argnums=2)
 
         da = - vjp_fx_a - dxg(states["z"], states["ref"], params)
         db = - vjp_fxref_b - dxrefg(states["z"], states["ref"], params)
@@ -119,10 +119,13 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
     # ================ Backward ==================
     tspace = jnp.array((0., T))
     result_backward = odeint(ode_func2, states_T, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
+    grad = tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]])
+    grad_norm = compute_pytree_norm(grad)
 
     return {
         "loss": loss_f,
-        "grad": tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]]),
+        "grad": grad,
+        "grad norm": grad_norm,
         "ODE error x": jnp.mean(jnp.sum((result_backward["z"][-1] - states_0["z"]) ** 2, axis=-1)),
         "ODE error ref": jnp.mean(jnp.sum((result_backward["ref"][-1] - states_0["ref"]) ** 2, axis=-1)),
     }
@@ -161,9 +164,11 @@ def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
 
 
 def create_model_fn(pde_instance: EulerPoisson):
-    net = KiNet(output_dim=3, time_embedding_dim=0)
+    net = get_model(pde_instance.cfg)
+    # net = KiNet(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug_2(output_dim=3, time_embedding_dim=0)
+    # net = KiNet_ResNet(output_dim=3, time_embedding_dim=16, n_resblocks=3)
     params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_x_0.sample(1, random.PRNGKey(1)))
     return net, params
 

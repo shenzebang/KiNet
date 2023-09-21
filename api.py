@@ -5,6 +5,7 @@ from typing import Dict
 from argparse import Namespace
 from jax.random import KeyArray
 from dataclasses import dataclass
+from omegaconf import DictConfig
 
 
 class ProblemInstance:
@@ -17,10 +18,10 @@ class ProblemInstance:
     instance_name: str
     dim: int
 
-    def __init__(self, args, rng):
-        self.args = args
-        self.instance_name = self.args.PDE
-        self.dim = args.domain_dim
+    def __init__(self, cfg, rng):
+        self.cfg = cfg
+        self.instance_name = f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"
+        self.dim = cfg.pde_instance.domain_dim
 
     def ground_truth(self, xs: jnp.ndarray):
         # Should return the test time stamp and the corresponding ground truth
@@ -30,7 +31,7 @@ class ProblemInstance:
 class Method:
     # model: nn.Module
     pde_instance: ProblemInstance
-    args: Namespace
+    cfg: DictConfig
     rng: KeyArray
 
     def value_and_grad_fn(self, forward_fn, params, rng):

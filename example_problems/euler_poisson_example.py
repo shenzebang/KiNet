@@ -27,27 +27,43 @@ def u_0(x: jnp.ndarray):
 # =============================================
 # Coulomb Kernel in 3D!
 def K_fn(x: jnp.ndarray, y: jnp.ndarray):
-
     dx = x - y
-    norm2 = jnp.sum(dx ** 2)
-    norm = jnp.maximum(jnp.sqrt(norm2), 1e-4)
-    # norm2 = jnp.maximum(norm2, 1e-4)
-    # norm2 = jnp.sum(dx ** 2)
-    return dx / norm / norm**2 / 4 / jnp.pi
-    # dx = x - y
-    # norm2 = jnp.sum(dx**2)
-    # norm = jnp.sqrt(norm2)
-    # norm2 = jnp.maximum(norm2, 1e-4)
-    # # norm2 = jnp.sum(dx ** 2)
-    # conditions = [
-    #     norm > 0,
-    #     norm <= 0,
-    # ]
-    # functions = [
-    #     dx / norm / norm2 / 4 / jnp.pi,
-    #     dx / norm / norm2 / 4 / jnp.pi,
-    # ]
-    # return jnp.piecewise(norm, conditions, functions)
+    norm2 = jnp.sum(dx ** 2, axis=-1)
+    norm = jnp.sqrt(norm2)
+    # norm = jnp.maximum(jnp.sqrt(norm2), 1e-4)
+    conditions = [
+        norm <= 1e-2,
+        norm >  1e-2
+    ]
+    functions = [
+        jnp.inf,
+        norm,
+    ]
+    norm_clipped = jnp.piecewise(norm, conditions, functions)
+    return dx / norm_clipped ** 3 / 4 / jnp.pi
+
+# def K_fn(x: jnp.ndarray, y: jnp.ndarray):
+#
+#     dx = x - y
+#     norm2 = jnp.sum(dx ** 2)
+#     norm = jnp.maximum(jnp.sqrt(norm2), 1e-4)
+#     # norm2 = jnp.maximum(norm2, 1e-4)
+#     # norm2 = jnp.sum(dx ** 2)
+#     return dx / norm / norm**2 / 4 / jnp.pi
+#     # dx = x - y
+#     # norm2 = jnp.sum(dx**2)
+#     # norm = jnp.sqrt(norm2)
+#     # norm2 = jnp.maximum(norm2, 1e-4)
+#     # # norm2 = jnp.sum(dx ** 2)
+#     # conditions = [
+#     #     norm > 0,
+#     #     norm <= 0,
+#     # ]
+#     # functions = [
+#     #     dx / norm / norm2 / 4 / jnp.pi,
+#     #     dx / norm / norm2 / 4 / jnp.pi,
+#     # ]
+#     # return jnp.piecewise(norm, conditions, functions)
 
 K_fn_vmapy = jax.vmap(K_fn, in_axes=[None, 0])
 
@@ -62,21 +78,21 @@ def drift_term(t: jnp.ndarray, x: jnp.ndarray):
     return jnp.zeros([])
 
 class EulerPoisson(ProblemInstance):
-    def __init__(self, args, rng):
-        super().__init__(args, rng)
-        self.diffusion_coefficient = jnp.ones([]) * args.diffusion_coefficient
-        self.total_evolving_time = jnp.ones([]) * args.total_evolving_time
+    def __init__(self, cfg, rng):
+        super().__init__(cfg, rng)
+        self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
+        self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
         self.distribution_x_0 = distribution_x_0
         self.distribution_0 = distribution_x_0
         self.u_0 = u_0
 
         # domain of interest (d dimensional box)
-        effective_domain_dim = args.domain_dim # (d for position)
-        self.mins = args.domain_min * jnp.ones(effective_domain_dim)
-        self.maxs = args.domain_max * jnp.ones(effective_domain_dim)
-        self.domain_area = (args.domain_max - args.domain_min) ** effective_domain_dim
+        effective_domain_dim = cfg.pde_instance.domain_dim # (d for position)
+        self.mins = cfg.pde_instance.domain_min * jnp.ones(effective_domain_dim)
+        self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
+        self.domain_area = (cfg.pde_instance.domain_max - cfg.pde_instance.domain_min) ** effective_domain_dim
 
-        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * args.total_evolving_time)
+        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
         self.drift_term = self.get_drift_term()
@@ -88,6 +104,7 @@ class EulerPoisson(ProblemInstance):
         return drift_term
 
     def prepare_test_data(self):
+        raise ValueError("This function is decrypted.")
         print(f"Using the instance {self.instance_name}. No closed form solution. "
               f"Use particle method to generate the test dataset.")
         # use particle method to generate the test dataset

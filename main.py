@@ -1,67 +1,66 @@
-import os
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-from config import args_parser
+import wandb
+import hydra
+from omegaconf import DictConfig, OmegaConf
 import optax
 import jax.random as random
-import jax.numpy as jnp
 from core.trainer import JaxTrainer
-import jax
-from utils.logging_utils import save_config
-from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
-from example_problems.euler_poisson_example import EulerPoisson
-from example_problems.flocking_example import Flocking
-from example_problems.euler_poisson_with_drift import EulerPoissonWithDrift
-from methods.KiNet import KiNet
-from methods.PINN import PINN
-# Example problems
-PDE_INSTANCES = {
-    '2D-Kinetic-Fokker-Planck'  : KineticFokkerPlanck,
-    '3D-Euler-Poisson'          : EulerPoisson,
-    '3D-Euler-Poisson-Drift'    : EulerPoissonWithDrift,
-    '3D-Flocking'               : Flocking,
-}
-# Methods
-METHODS = {
-    'KiNet' : KiNet,
-    'PINN'  : PINN,
-}
+from register import get_pde_instance, get_method
 
+def get_optimizer(optimizer_cfg: DictConfig):
+    if optimizer_cfg.method == "SGD":
+        if optimizer_cfg.learning_rate.scheduling == "None":
+            lr_schedule = optimizer_cfg.learning_rate.initial
+        elif optimizer_cfg.learning_rate.scheduling == "cosine":
+            lr_schedule = optax.cosine_decay_schedule(optimizer_cfg.learning_rate.initial, 20000, 0.1)
+        else:
+            raise NotImplementedError
 
-if __name__ == '__main__':
-    args = args_parser()
+        optimizer = optax.chain(optax.adaptive_grad_clip(optimizer_cfg.grad_clipping.threshold),
+                                optax.add_decayed_weights(optimizer_cfg.weight_decay),
+                                optax.sgd(learning_rate=lr_schedule, momentum=optimizer_cfg.momentum)
+                                )
+    else:
+        raise NotImplementedError
+    return optimizer
 
-    save_directory = f"./{args.save_directory}/{args.PDE}_{args.method}_{args.total_evolving_time}"
-    save_config(save_directory, args)
-    print(f"[Running {args.method} on {args.PDE} with a total evolving time of {args.total_evolving_time}]")
+@hydra.main(config_path="conf", config_name="config")
+def main(cfg):
+    print(OmegaConf.to_yaml(cfg))
+    wandb.login()
+    pde_instance_name = f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"
+    run = wandb.init(
+        # Set the project where this run will be logged
+        project=f"{pde_instance_name}-{cfg.solver.name}-{cfg.pde_instance.total_evolving_time}",
+        # Track hyperparameters and run metadata
+        config=OmegaConf.to_container(cfg)
+    )
 
-    rng_problem, rng_method, rng_trainer = random.split(random.PRNGKey(args.seed), 3)
+    # print(f"[Running {cfg.solver.name} on {pde_instance_name} with a total evolving time of {cfg.pde_instance.total_evolving_time}]")
 
+    rng_problem, rng_method, rng_trainer = random.split(random.PRNGKey(cfg.seed), 3)
 
     # create problem instance
-    pde_instance = PDE_INSTANCES[args.PDE](args=args, rng=rng_problem)
+    pde_instance = get_pde_instance(cfg)(cfg=cfg, rng=rng_problem)
 
     # create method instance
-    method = METHODS[args.method](pde_instance=pde_instance, args=args, rng=rng_method)
+    method = get_method(cfg)(pde_instance=pde_instance, cfg=cfg, rng=rng_method)
 
     # create model
     net, params = method.create_model_fn()
 
     # create optimizer
-    # optimizer = optax.chain(optax.adaptive_grad_clip(0.1), optax.adam(learning_rate=args.learning_rate))
-    optimizer = optax.chain(optax.adaptive_grad_clip(1), optax.add_decayed_weights(0.01), optax.sgd(learning_rate=args.learning_rate, momentum=.9))
-    # lr_schedule = optax.cosine_decay_schedule(args.learning_rate, 20000, 0.1)
-    # optimizer = optax.chain(optax.adaptive_grad_clip(1),
-    #                         optax.add_decayed_weights(0.01),
-    #                         optax.sgd(learning_rate=lr_schedule, momentum=.9)
-    #                         )
-
+    optimizer = get_optimizer(cfg.train.optimizer)
 
     # Construct the JaxTrainer
-    trainer = JaxTrainer(args=args, method=method, rng=rng_trainer, save_directory=save_directory, forward_fn=net.apply, params=params, optimizer=optimizer)
+    trainer = JaxTrainer(cfg=cfg, method=method, rng=rng_trainer, forward_fn=net.apply,
+                         params=params, optimizer=optimizer)
 
     # Fit the model
     params_trained = trainer.fit()
 
     # Test the model
 
+    wandb.finish()
+
+if __name__ == '__main__':
+    main()

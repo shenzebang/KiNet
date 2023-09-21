@@ -31,8 +31,8 @@ def ground_truth_op_uniform(t: jnp.ndarray, x: jnp.ndarray):
 ground_truth_op_vmapx = jax.vmap(ground_truth_op_uniform, in_axes=[None, 0])
 
 class EulerPoissonWithDrift(EulerPoisson):
-    def __init__(self, args, rng):
-        super(EulerPoissonWithDrift, self).__init__(args, rng)
+    def __init__(self, cfg, rng):
+        super(EulerPoissonWithDrift, self).__init__(cfg, rng)
         self.u_0 = u_0
 
     def get_drift_term(self):
@@ -40,7 +40,7 @@ class EulerPoissonWithDrift(EulerPoisson):
 
     def prepare_test_data(self):
         print(f"Using the instance {self.instance_name}. Will use the close-form solution to test accuracy.")
-        x_test = self.distribution_0.sample(self.args.batch_size_test_ref, random.PRNGKey(1234))
+        x_test = self.distribution_0.sample(self.cfg.test.batch_size, random.PRNGKey(1234))
         return {"x_T": x_test, }
 
     def ground_truth(self, xs: jnp.ndarray):

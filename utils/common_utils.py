@@ -64,3 +64,7 @@ def volume_nd_ball(d: int):
         return jnp.pi ** k / math.factorial(k)
     else:
         return 2 * math.factorial(k) * ((4 * jnp.pi) ** k) / math.factorial(d)
+
+def compute_pytree_norm(pytree):
+    pytree_norm = jnp.sqrt(sum(jnp.vdot(g, g) for g in jax.tree_util.tree_leaves(pytree)))
+    return pytree_norm
