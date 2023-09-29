@@ -6,12 +6,12 @@ from utils.common_utils import divergence_fn
 from jax.experimental.ode import odeint
 from utils.plot_utils import plot_scatter_2d
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
-from core.model import KiNet
+from core.model import get_model
+from utils.common_utils import compute_pytree_norm
 import jax.random as random
 
 def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
     # unpack the parameters
-    ODE_tolerance = config["ODE_tolerance"]
     Gamma = pde_instance.Gamma
     beta = pde_instance.beta
     target_potential = pde_instance.target_potential
@@ -72,7 +72,7 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
         return [dz, dxi, dloss]
 
     tspace = jnp.array((0., T))
-    result_forward = odeint(ode_func1, states_0, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
+    result_forward = odeint(ode_func1, states_0, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
     z_T = result_forward[0][1]
     xi_T = result_forward[1][1]
     loss_f = result_forward[2][1]
@@ -149,7 +149,7 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
 
     # ================ Backward ==================
     tspace = jnp.array((0., T))
-    result_backward = odeint(ode_func2, states_T, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
+    result_backward = odeint(ode_func2, states_T, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
 
     grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward[5]])
     # x_0_b = result_backward[0][-1]
@@ -161,8 +161,14 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
     # error_xi = jnp.mean(jnp.sum((xi_0 - xi_0_b).reshape(xi_0.shape[0], -1) ** 2, axis=(1,)))
     # error_ref = jnp.mean(jnp.sum((ref_0 - ref_0_b).reshape(ref_0.shape[0], -1) ** 2, axis=(1,)))
     # loss_b = result_backward[4][-1]
-
-    return loss_f, grad_T
+    grad_norm = compute_pytree_norm(grad_T)
+    return {
+        "loss": loss_f,
+        "grad": grad_T,
+        "grad norm": grad_norm,
+        # "ODE error x": jnp.mean(jnp.sum((result_backward["z"][-1] - states_0["z"]) ** 2, axis=-1)),
+        # "ODE error ref": jnp.mean(jnp.sum((result_backward["ref"][-1] - states_0["ref"]) ** 2, axis=-1)),
+    }
 
 # choose either stochastic gradient estimator or the exact one.
 value_and_grad_fn = value_and_grad_fn_exact
@@ -264,8 +270,10 @@ def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     return {"KL": KL, "Fisher Information": Fisher_information}
 
 def create_model_fn(pde_instance: KineticFokkerPlanck):
-    net = KiNet(time_embedding_dim=20, append_time=False)
-    params = net.init(random.PRNGKey(11), jnp.zeros(1),
-                      jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+    # net = KiNet(time_embedding_dim=20, append_time=False)
+    net = get_model(pde_instance.cfg)
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
+    # params = net.init(random.PRNGKey(11), jnp.zeros(1),
+    #                   jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
     return net, params
 

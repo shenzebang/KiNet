@@ -62,10 +62,10 @@ def eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, time_st
 
 
 class KineticFokkerPlanck(ProblemInstance):
-    def __init__(self, args, rng):
-        super().__init__(args, rng)
-        self.diffusion_coefficient = jnp.ones([]) * args.diffusion_coefficient
-        self.total_evolving_time = jnp.ones([]) * args.total_evolving_time
+    def __init__(self, cfg, rng):
+        super().__init__(cfg, rng)
+        self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
+        self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
         self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
 
         self.test_data = self.prepare_test_data()
@@ -73,12 +73,12 @@ class KineticFokkerPlanck(ProblemInstance):
         self.beta = beta
         self.Gamma = Gamma
         # domain of interest (2d dimensional box)
-        effective_domain_dim = args.domain_dim * 2  # (2d for position and velocity)
-        self.mins = args.domain_min * jnp.ones(effective_domain_dim)
-        self.maxs = args.domain_max * jnp.ones(effective_domain_dim)
-        self.domain_area = (args.domain_max - args.domain_min) ** (effective_domain_dim)
+        effective_domain_dim = cfg.pde_instance.domain_dim * 2  # (2d for position and velocity)
+        self.mins = cfg.pde_instance.domain_min * jnp.ones(effective_domain_dim)
+        self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
+        self.domain_area = (cfg.pde_instance.domain_min - cfg.pde_instance.domain_max) ** (effective_domain_dim)
 
-        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * args.total_evolving_time)
+        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
     def prepare_test_data(self):

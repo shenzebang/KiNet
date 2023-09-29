@@ -6,6 +6,7 @@ import jax.random as random
 from core.trainer import JaxTrainer
 from register import get_pde_instance, get_method
 
+
 def get_optimizer(optimizer_cfg: DictConfig):
     if optimizer_cfg.method == "SGD":
         if optimizer_cfg.learning_rate.scheduling == "None":
@@ -23,6 +24,7 @@ def get_optimizer(optimizer_cfg: DictConfig):
         raise NotImplementedError
     return optimizer
 
+
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg):
     print(OmegaConf.to_yaml(cfg))
@@ -34,8 +36,6 @@ def main(cfg):
         # Track hyperparameters and run metadata
         config=OmegaConf.to_container(cfg)
     )
-
-    # print(f"[Running {cfg.solver.name} on {pde_instance_name} with a total evolving time of {cfg.pde_instance.total_evolving_time}]")
 
     rng_problem, rng_method, rng_trainer = random.split(random.PRNGKey(cfg.seed), 3)
 
@@ -61,6 +61,7 @@ def main(cfg):
     # Test the model
 
     wandb.finish()
+
 
 if __name__ == '__main__':
     main()
