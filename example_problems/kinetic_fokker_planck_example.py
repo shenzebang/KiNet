@@ -32,7 +32,6 @@ v_Gaussian_Sigma_mu_kinetic_close_form = jax.vmap(Gaussian_Sigma_mu_kinetic_clos
 def eval_Gaussian_Sigma_mu_kinetic(configuration, time_stamps, beta, Gamma, tolerance=1e-5):
     domain_dim = configuration["mu_x_0"].shape[0]
 
-    # TODO: dependence on the diffusion coefficient
     f_CLD = jnp.array([[0., 1.], [-beta, - 4 * beta / Gamma]])
     f_kron_eye = jnp.kron(f_CLD, jnp.eye(domain_dim))
     G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
