@@ -15,16 +15,23 @@ INSTANCES = {
 
 class KiNet(Method):
     def create_model_fn(self):
-        net, params = INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
-        return net, params
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.create_model_fn(self.pde_instance)
+        else:
+            return INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
+        # net, params = INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
+        # return net, params
 
 
     def test_fn(self, forward_fn, params, rng):
 
         forward_fn = partial(forward_fn, params)
         config_test = {}
-
-        return INSTANCES[self.pde_instance.instance_name].test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
+                                                rng=rng)
+        else:
+            return INSTANCES[self.pde_instance.instance_name].test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
                                                 rng=rng)
 
     def plot_fn(self, forward_fn, params, rng):
@@ -32,8 +39,11 @@ class KiNet(Method):
         forward_fn = partial(forward_fn, params)
 
         config_plot = {}
-
-        return INSTANCES[self.pde_instance.instance_name].plot_fn(forward_fn=forward_fn, config=config_plot, pde_instance=self.pde_instance,
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.plot_fn(forward_fn=forward_fn, config=config_plot, pde_instance=self.pde_instance,
+                                                rng=rng)
+        else:
+            return INSTANCES[self.pde_instance.instance_name].plot_fn(forward_fn=forward_fn, config=config_plot, pde_instance=self.pde_instance,
                                                 rng=rng)
 
     def value_and_grad_fn(self, forward_fn, params, rng):
@@ -44,7 +54,11 @@ class KiNet(Method):
         config_train = {
             "ODE_tolerance" : self.cfg.ODE_tolerance,
         }
-        return INSTANCES[self.pde_instance.instance_name].value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
+                                                          config=config_train, pde_instance=self.pde_instance)
+        else:
+            return INSTANCES[self.pde_instance.instance_name].value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
                                                           config=config_train, pde_instance=self.pde_instance)
 
     def sample_data(self, rng):

@@ -27,7 +27,7 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
     def bar_f(_z, _t, _params):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
-        dv = - Gamma * beta * forward_fn(_params, _t, _z) - beta * target_potential.gradient(x) - 4 * beta / Gamma * v
+        dv = - Gamma * beta * forward_fn(_params, _t, _z) - target_potential.gradient(x) - 4 * beta / Gamma * v
         dz = jnp.concatenate([dx, dv], axis=-1)
         return dz
 
@@ -186,7 +186,7 @@ def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     def bar_f(_z, _t):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
-        dv = - Gamma * beta * forward_fn(_t, _z) - beta * target_potential.gradient(x) - 4 * beta / Gamma * v
+        dv = - Gamma * beta * forward_fn(_t, _z) - target_potential.gradient(x) - 4 * beta / Gamma * v
         dz = jnp.concatenate([dx, dv], axis=-1)
         return dz
 
@@ -215,7 +215,7 @@ def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     def bar_f(_z, _t):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
-        dv = - Gamma * beta * forward_fn(_t, _z) - beta * target_potential.gradient(x) - 4 * beta / Gamma * v
+        dv = - Gamma * beta * forward_fn(_t, _z) - target_potential.gradient(x) - 4 * beta / Gamma * v
         dz = jnp.concatenate([dx, dv], axis=-1)
         return dz
 

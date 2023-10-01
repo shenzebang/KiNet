@@ -7,8 +7,6 @@ from methods.PINN import PINN
 from omegaconf import DictConfig
 
 PDE_INSTANCES = {
-    '2D-Kinetic-Fokker-Planck'  : KineticFokkerPlanck,
-    # '3D-Euler-Poisson'          : EulerPoisson,
     '3D-Euler-Poisson'    : EulerPoissonWithDrift,
     '3D-Flocking'               : Flocking,
 }
@@ -19,7 +17,10 @@ METHODS = {
 }
 
 def get_pde_instance(cfg: DictConfig):
-    return PDE_INSTANCES[f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"]
+    if cfg.pde_instance.name == "Kinetic-Fokker-Planck":
+        return KineticFokkerPlanck
+    else:
+        return PDE_INSTANCES[f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"]
 
 def get_method(cfg: DictConfig):
     return METHODS[cfg.solver.name]

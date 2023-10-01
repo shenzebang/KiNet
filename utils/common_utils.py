@@ -38,19 +38,16 @@ def divergence_fn(f, _x: jnp.ndarray, _v=None):
         return batch_div_fn(f, _x, _v).mean(axis=0)
 
 
-def _gaussian_score(x, Sigma, mu): # return the score for a given Gaussian(mu, Sigma) at x
-    cov = jnp.matmul(Sigma, jnp.transpose(Sigma))
-    inv_cov = jax.numpy.linalg.inv(cov)
-    return jnp.matmul(inv_cov, mu - x)
+def _gaussian_score(x, cov, mu): # return the score for a given Gaussian(mu, Sigma) at x
+    return jax.numpy.linalg.inv(cov) @ (mu - x)
 
 # return the score for a given Gaussians(Sigma, mu) at [x1, ..., xN]
 v_gaussian_score = jax.vmap(_gaussian_score, in_axes=[0, None, None])
 
-def _gaussian_log_density(x, Sigma, mu):
-    cov = jnp.matmul(Sigma, jnp.transpose(Sigma))
+def _gaussian_log_density(x, cov, mu):
     log_det = jnp.log(jax.numpy.linalg.det(cov * 2 * jnp.pi))
     inv_cov = jax.numpy.linalg.inv(cov)
-    quad = jnp.dot(x - mu, jnp.matmul(inv_cov, x - mu))
+    quad = jnp.dot(x - mu, inv_cov @ (x - mu))
     return - .5 * (log_det + quad)
 
 v_gaussian_log_density = jax.vmap(_gaussian_log_density, in_axes=[0, None, None])

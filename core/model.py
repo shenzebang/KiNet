@@ -4,7 +4,9 @@ from flax import linen as nn
 from typing import Tuple
 from core.normalizing_flow import TimeEmbedding, ActivationFactory, ActivationModule
 from example_problems.euler_poisson_with_drift import ground_truth_op_vmapx, ground_truth_op_uniform
-
+# For Debugging KFP
+from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck, Gaussian_Sigma_mu_kinetic_close_form
+from utils.common_utils import v_gaussian_score, v_gaussian_log_density
 class MLP(nn.Module):
     output_dim: int = 1
     hidden_dims: Tuple[int] = (20, 20, 20, 20, 20, 20, 20, 20,)
@@ -267,16 +269,40 @@ class KiNet_ResNet(nn.Module):
 
         return z
 
+class DEBUG_KFP(nn.Module):
+    pde_instance: KineticFokkerPlanck
 
-def get_model(cfg):
+    def setup(self):
+        self.layers = nn.Dense(1)
+
+    def __call__(self, t: jnp.ndarray, x: jnp.ndarray):
+        mu_t, Sigma_t = Gaussian_Sigma_mu_kinetic_close_form(
+                            t,
+                            self.pde_instance.initial_configuration,
+                            self.pde_instance.beta,
+                            self.pde_instance.Gamma
+        )
+        score = v_gaussian_score(x, Sigma_t, mu_t)
+        score_x, score_v = jnp.split(score, indices_or_sections=2, axis=-1)
+        return score_v
+
+
+def get_model(cfg, DEBUG=False, pde_instance=None):
     if cfg.neural_network.n_resblocks > 0:
         # use resnet
         raise NotImplementedError
     else:
         # do not use resnet
-        model = KiNet(output_dim=cfg.pde_instance.domain_dim,
-                      time_embedding_dim=cfg.neural_network.time_embedding_dim,
-                      hidden_dims=[cfg.neural_network.hidden_dim] * cfg.neural_network.layers
-                      )
+        if not DEBUG:
+            model = KiNet(output_dim=cfg.pde_instance.domain_dim,
+                          time_embedding_dim=cfg.neural_network.time_embedding_dim,
+                          hidden_dims=[cfg.neural_network.hidden_dim] * cfg.neural_network.layers
+                          )
+        else:
+        # Use the ground truth for debugging
+            if cfg.pde_instance.name == "Kinetic-Fokker-Planck":
+                model = DEBUG_KFP(pde_instance)
+            else:
+                raise NotImplementedError
         return model
 

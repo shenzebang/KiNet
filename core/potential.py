@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import jax
 from utils.common_utils import v_matmul
-
+import warnings
 
 class Potential(object):
     def gradient(self, x: jnp.DeviceArray):
@@ -9,22 +9,17 @@ class Potential(object):
 
 
 class QuadraticPotential(Potential):
-    def __init__(self, mu: jnp.ndarray, sigma: jnp.ndarray):
+    def __init__(self, mu: jnp.ndarray, cov: jnp.ndarray):
+        assert mu.ndim == 1 and cov.ndim == 2 and cov.shape[0] == cov.shape[1] and cov.shape[0] == mu.shape[0]
+        warnings.warn("cov is assumed to be positive definite!")
         self.dim = mu.shape[0]
         self.mu = mu
-
-        if sigma.shape[0] == 1:
-            self.sigma = sigma * jnp.eye(mu.shape[0])
-        else:
-            self.sigma = sigma
-            assert self.sigma.shape[0] == self.sigma.shape[1]
-
-        self.cov = jnp.matmul(self.sigma, jnp.transpose(self.sigma))
+        self.cov = cov
         self.inv_cov = jnp.linalg.inv(self.cov)
 
     def gradient(self, x):
         if x.ndim == 1:
-            return jnp.matmul(self.inv_cov, x - self.mu)
+            return self.inv_cov @ (x - self.mu)
         else:
             return v_matmul(self.inv_cov, x - self.mu)
 

@@ -47,54 +47,35 @@ class DistributionKinetic(Distribution):
         return logdensity_z
 
 class Gaussian(Distribution):
-    def __init__(self, mu: jnp.ndarray, sigma: jnp.ndarray):
-        assert mu.ndim == 1
+    def __init__(self, mu: jnp.ndarray, cov: jnp.ndarray):
+        assert mu.ndim == 1 and cov.ndim == 2 and cov.shape[0] == cov.shape[1] and cov.shape[0] == mu.shape[0]
+        warnings.warn("cov is assumed to be positive definite!")
         self.dim = mu.shape[0]
         self.mu = mu
-
-        # sigma should be an jnp.ndarray with sigma.ndim == 1 or sigma.ndim == 2
-        self.sigma = sigma
-
-        if sigma.shape[0] != 1:
-            assert sigma.shape[0] == sigma.shape[1]  # make sure sigma is a square matrix
-            # if sigma.shape[0] != 1, the covariance matrix is sigma.transpose * sigma
-            self.cov = jnp.matmul(self.sigma, jnp.transpose(self.sigma))
-            self.inv_cov = jnp.linalg.inv(self.cov)
-            self.log_det = jnp.log(jnp.linalg.det(self.cov * 2 * jnp.pi))
-        else:
-            # if sigma.shape[0] == 1, the covariance matrix is (sigma ** 2) * jnp.eye(mu.shape[0])
-            self.cov = self.sigma ** 2
-            self.inv_cov = 1. / self.cov
-            self.log_det = None  # this is not used
+        self.cov = cov
+        U, S, _ = jnp.linalg.svd(cov)
+        self.inv_cov = jnp.linalg.inv(self.cov)
+        self.log_det = jnp.log(jnp.linalg.det(self.cov * 2 * jnp.pi))
+        self.cov_half = U @ jnp.diag(jnp.sqrt(S)) @ jnp.transpose(U)
 
     def sample(self, batch_size: int, key):
-        if self.sigma.shape[0] == 1:
-            return self.sigma * random.normal(key, (batch_size, self.dim)) + self.mu
-        else:
-            return v_matmul(self.sigma, random.normal(key, (batch_size, self.dim))) + self.mu
+        return v_matmul(self.cov_half, random.normal(key, (batch_size, self.dim))) + self.mu
 
     def score(self, x: jnp.ndarray):
-        if self.sigma.shape[0] == 1:
-            return (self.mu - x) / self.sigma ** 2
+        if x.ndim == 1:
+            return jnp.matmul(self.inv_cov, self.mu - x)
         else:
-            if x.ndim == 1:
-                return jnp.matmul(self.inv_cov, self.mu - x)
-            else:
-                return v_matmul(self.inv_cov, self.mu - x)
+            return v_matmul(self.inv_cov, self.mu - x)
 
     def logdensity(self, x: jnp.ndarray):
-        if self.sigma.shape[0] == 1:
-            return -self.dim / 2 * jnp.log(2 * jnp.pi * self.sigma ** 2) - jnp.sum((x - self.mu) ** 2,
-                                                                                   axis=(1,)) / 2 / self.sigma ** 2
+        if x.ndim == 1:  # no batching
+            quad = jnp.dot(x - self.mu, self.inv_cov @ (x - self.mu))
+        elif x.ndim == 2:  # the first dimension is batch
+            offset = x - self.mu  # broadcasting
+            quad = jnp.sum(offset * v_matmul(self.inv_cov, offset), axis=(-1,))
         else:
-            if x.ndim == 1:  # no batching
-                quad = jnp.dot(x - self.mu, jnp.matmul(self.inv_cov, x - self.mu))
-            elif x.ndim == 2:  # the first dimension is batch
-                offset = x - self.mu  # broadcasting
-                quad = jnp.sum(offset * v_matmul(self.inv_cov, offset), axis=(-1,))
-            else:
-                raise NotImplementedError
-            return - .5 * (self.log_det + quad)
+            raise NotImplementedError
+        return - .5 * (self.log_det + quad)
 
     def density(self, x: jnp.ndarray):
         return jnp.exp(self.logdensity(x))

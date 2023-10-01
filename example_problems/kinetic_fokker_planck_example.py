@@ -6,52 +6,63 @@ from api import ProblemInstance
 from utils.common_utils import v_gaussian_score, v_gaussian_log_density
 from core.potential import QuadraticPotential
 
-Sigma_x_0 = jnp.diag(jnp.array([1., 1.]))
-mu_x_0 = jnp.array([2., 2.])
-distribution_x_0 = Gaussian(mu_x_0, Sigma_x_0)
+# beta = 1.  # friction coefficient
+#
+# Gamma = jnp.sqrt(4 * beta)
 
-Sigma_v_0 = jnp.diag(jnp.array([1, 1]))
-mu_v_0 = jnp.array([0., 0.])
-distribution_v_0 = Gaussian(mu_v_0, Sigma_v_0)
+# G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
 
-Sigma_x_inf = jnp.diag(jnp.array([1., 1.]))
-mu_x_inf = jnp.array([0., 0.])
-target_potential = QuadraticPotential(mu_x_inf, Sigma_x_inf)
+def Gaussian_Sigma_mu_kinetic_close_form(t, configuration, beta, Gamma):
+    domain_dim = configuration["mu_x_0"].shape[0]
+    Bt = beta * t
+    mu_x_t = (2 * Bt / Gamma * configuration["mu_x_0"] + 4 * Bt / Gamma ** 2 * configuration["mu_v_0"] + configuration["mu_x_0"]) * jnp.exp(-2 * Bt / Gamma)
+    mu_v_t = (-Bt * configuration["mu_x_0"] - 2 * Bt / Gamma * configuration["mu_v_0"] + configuration["mu_v_0"]) * jnp.exp(-2 * Bt / Gamma)
+    mu_t = jnp.concatenate([mu_x_t, mu_v_t], axis=-1)
 
-beta = 1.  # friction coefficient
+    Sigma_xx_t_scale = configuration["Sigma_x_0_scale"] + jnp.exp(4 * Bt / Gamma) - 1 + 4 * Bt / Gamma * (configuration["Sigma_x_0_scale"] - 1) + 4 * Bt**2 / Gamma**2 * (configuration["Sigma_x_0_scale"] - 2) + 16 * Bt **2 / Gamma**4 * configuration["Sigma_v_0_scale"]
+    Sigma_xv_t_scale = - Bt * configuration["Sigma_x_0_scale"] + 4 * Bt / Gamma**2 * configuration["Sigma_v_0_scale"] - 2 * Bt**2 / Gamma * (configuration["Sigma_x_0_scale"] - 2) - 8 * Bt**2 / Gamma**3 * configuration["Sigma_v_0_scale"]
+    Sigma_vv_t_scale = Gamma**2/4 * (jnp.exp(4*Bt/Gamma) - 1) + Bt * Gamma + configuration["Sigma_v_0_scale"] * (1 + 4 * Bt**2 / Gamma**2 - 4 * Bt / Gamma) + Bt**2 * (configuration["Sigma_x_0_scale"] - 2)
+    Sgima_t_scale = jnp.array([[Sigma_xx_t_scale, Sigma_xv_t_scale], [Sigma_xv_t_scale, Sigma_vv_t_scale]]) * jnp.exp(-4*Bt/Gamma)
+    Sigma_t = jnp.kron(Sgima_t_scale, jnp.eye(domain_dim))
 
-Gamma = jnp.sqrt(4 * beta)
+    return mu_t, Sigma_t
 
+v_Gaussian_Sigma_mu_kinetic_close_form = jax.vmap(Gaussian_Sigma_mu_kinetic_close_form, in_axes=[0, None, None, None])
 
-f_CLD = jnp.array([[0., 1.], [-beta, - 4 * beta / Gamma]])
+def eval_Gaussian_Sigma_mu_kinetic(configuration, time_stamps, beta, Gamma, tolerance=1e-5):
+    domain_dim = configuration["mu_x_0"].shape[0]
 
-G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
-
-f_kron_eye = jnp.kron(f_CLD, jnp.eye(2))
-GG_transpose = jnp.matmul(G, jnp.transpose(G))
-
-
-
-
-def eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, time_stamps, tolerance=1e-5):
     # TODO: dependence on the diffusion coefficient
-    mu_0 = jnp.concatenate([mu_x_0, mu_v_0], axis=-1)
-    Sigma_0 = jnp.diag(jnp.concatenate([jnp.diag(Sigma_x_0), jnp.diag(Sigma_v_0)], axis=-1))
-    states_0 = [Sigma_0, mu_0]
+    f_CLD = jnp.array([[0., 1.], [-beta, - 4 * beta / Gamma]])
+    f_kron_eye = jnp.kron(f_CLD, jnp.eye(domain_dim))
+    G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
+    GG_transpose = G @ jnp.transpose(G)
+
+    states_0 = {
+        "Sigma": jnp.diag(
+            jnp.concatenate(
+            [jnp.diag(configuration["Sigma_x_0"]), jnp.diag(configuration["Sigma_v_0"])],
+            axis=-1
+            )
+        ),
+        "mu": jnp.concatenate([configuration["mu_x_0"], configuration["mu_v_0"]], axis=-1),
+    }
 
     def ode_func(states, t):
-        Sigma_t, mu_t = states
-
-        dSigma = jnp.matmul(f_kron_eye, Sigma_t) + jnp.transpose(jnp.matmul(f_kron_eye, Sigma_t)) + jnp.kron(
-            GG_transpose, jnp.eye(2))
-        dmu = jnp.matmul(f_kron_eye, mu_t)
-        return [dSigma, dmu]
+        return {
+            "Sigma": f_kron_eye @ states["Sigma"] + jnp.transpose(f_kron_eye @ states["Sigma"]) + jnp.kron(
+            GG_transpose, jnp.eye(domain_dim)),
+            "mu": jnp.matmul(f_kron_eye, states["mu"])
+        }
 
     states = odeint(ode_func, states_0, time_stamps, atol=tolerance, rtol=tolerance)
-    mus = states[1]
-    Sigmas = states[0]
 
-    return mus, Sigmas
+    # Check the correctness of the closed form solution
+    mus_closed_form, Sigmas_closed_form = v_Gaussian_Sigma_mu_kinetic_close_form(time_stamps, configuration, beta, Gamma)
+    print(jnp.mean(jnp.sum((mus_closed_form - states["mu"]) ** 2, axis=-1)))
+    print(jnp.mean(jnp.sum((Sigmas_closed_form - states["Sigma"]) ** 2, axis=(-1, -2,))))
+
+    return states["mu"], states["Sigma"]
 
 
 # test_time_stamps = jnp.linspace(0, T, num=11)
@@ -59,19 +70,51 @@ def eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, time_st
 # mus, Sigmas = eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, test_time_stamps)
 #
 # test_data = (test_time_stamps, mus, Sigmas)
+def initialize_configuration(domain_dim: int, beta):
+    Sigma_x_0_scale = 1.
+    Sigma_v_0_scale = 1.
+    return {
+        "Sigma_x_0_scale": Sigma_x_0_scale,
+        "Sigma_x_0": jnp.eye(domain_dim) * Sigma_x_0_scale,
+        "mu_x_0": jnp.ones(domain_dim) * 2.,
+        "Sigma_v_0_scale": Sigma_v_0_scale,
+        "Sigma_v_0": jnp.eye(domain_dim) * Sigma_v_0_scale,
+        "mu_v_0": jnp.zeros(domain_dim),
+        "Sigma_x_inf": jnp.eye(domain_dim) / beta,
+        "mu_x_inf": jnp.zeros(domain_dim),
+    }
 
+def get_distribution_0(configuration):
+    distribution_x_0 = Gaussian(configuration["mu_x_0"], configuration["Sigma_x_0"])
+    distribution_v_0 = Gaussian(configuration["mu_v_0"], configuration["Sigma_v_0"])
+    return DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
+
+def get_potential(configuration):
+    return QuadraticPotential(configuration["mu_x_inf"], configuration["Sigma_x_inf"])
+
+def prepare_test_data(configuration, total_evolving_time, beta, Gamma):
+    test_time_stamps = jnp.linspace(jnp.zeros([]), total_evolving_time, num=11)
+
+    mus, Sigmas = eval_Gaussian_Sigma_mu_kinetic(configuration, test_time_stamps, beta, Gamma)
+
+    test_data = (test_time_stamps, mus, Sigmas)
+
+    return test_data
 
 class KineticFokkerPlanck(ProblemInstance):
     def __init__(self, cfg, rng):
         super().__init__(cfg, rng)
         self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
-        self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
-        self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
+        # To ensure that dx = v dt, we have Gamma == jnp.sqrt(4 * beta) and Gamma * beta == diffusion_coefficient
+        self.beta = (self.diffusion_coefficient / 2) ** (2 / 3)
+        self.Gamma = 2 * jnp.sqrt(self.beta)
 
-        self.test_data = self.prepare_test_data()
-        self.target_potential = target_potential
-        self.beta = beta
-        self.Gamma = Gamma
+        self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
+        self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta)
+        self.distribution_0 = get_distribution_0(self.initial_configuration)
+        self.target_potential = get_potential(self.initial_configuration)
+        self.test_data = prepare_test_data(self.initial_configuration, self.total_evolving_time, self.beta, self.Gamma)
+
         # domain of interest (2d dimensional box)
         effective_domain_dim = cfg.pde_instance.domain_dim * 2  # (2d for position and velocity)
         self.mins = cfg.pde_instance.domain_min * jnp.ones(effective_domain_dim)
@@ -81,14 +124,6 @@ class KineticFokkerPlanck(ProblemInstance):
         self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
-    def prepare_test_data(self):
-        test_time_stamps = jnp.linspace(jnp.zeros([]), self.total_evolving_time, num=11)
-
-        mus, Sigmas = eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, test_time_stamps)
-
-        test_data = (test_time_stamps, mus, Sigmas)
-
-        return test_data
 
     def ground_truth(self, xs: jnp.ndarray):
         _, mus, Sigmas = self.test_data
