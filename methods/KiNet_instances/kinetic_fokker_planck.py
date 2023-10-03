@@ -4,17 +4,13 @@ from jax import grad, vjp
 import jax.numpy as jnp
 from utils.common_utils import divergence_fn
 from jax.experimental.ode import odeint
-from utils.plot_utils import plot_scatter_2d
+from utils.plot_utils import plot_velocity
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from core.model import get_model
 from utils.common_utils import compute_pytree_norm
 import jax.random as random
 
 def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
-    # unpack the parameters
-    Gamma = pde_instance.Gamma
-    beta = pde_instance.beta
-    target_potential = pde_instance.target_potential
     T = pde_instance.total_evolving_time
     # unpack the data
     z_0 = data["data_initial"]
@@ -25,11 +21,9 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
 
 
     def bar_f(_z, _t, _params):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        dx = v
-        dv = - Gamma * beta * forward_fn(_params, _t, _z) - target_potential.gradient(x) - 4 * beta / Gamma * v
-        dz = jnp.concatenate([dx, dv], axis=-1)
-        return dz
+        forward_fn_params = lambda t, z: forward_fn(_params, t, z)
+        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn_params)
+        return dynamics_fn(_t, _z)
 
     def f(_z, _t, _params):
         score = forward_fn(_params, _t, _z)
@@ -176,22 +170,16 @@ value_and_grad_fn = value_and_grad_fn_exact
 
 def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     T = pde_instance.total_evolving_time
-    Gamma = pde_instance.Gamma
-    beta = pde_instance.beta
-    target_potential = pde_instance.target_potential
 
     mins = pde_instance.mins
     maxs = pde_instance.maxs
     # Define the dynamics
+
     def bar_f(_z, _t):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        dx = v
-        dv = - Gamma * beta * forward_fn(_t, _z) - target_potential.gradient(x) - 4 * beta / Gamma * v
-        dz = jnp.concatenate([dx, dv], axis=-1)
-        return dz
+        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
+        return dynamics_fn(_t, _z)
 
     # sample initial data
-
     z_0 = pde_instance.distribution_0.sample(batch_size=1000, key=jax.random.PRNGKey(1))
     states_0 = [z_0]
 
@@ -200,24 +188,20 @@ def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
         dz = bar_f(z, t)
         return [dz]
 
-    tspace = jnp.linspace(0, T, num=20)
+    tspace = jnp.linspace(0, T, num=200)
     result_forward = odeint(ode_func1, states_0, tspace, atol=1e-6, rtol=1e-6)
     z_0T = result_forward[0]
-    x_0T, v_0T = jnp.split(z_0T, indices_or_sections=2, axis=-1)
+    # x_0T, v_0T = jnp.split(z_0T, indices_or_sections=2, axis=-1)
 
-    plot_scatter_2d(x_0T, mins, maxs)
+    # plot_scatter_2d(x_0T, mins, maxs)
+    plot_velocity(z_0T)
+
 
 def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
-    Gamma = pde_instance.Gamma
-    beta = pde_instance.beta
-    target_potential = pde_instance.target_potential
     # compute the KL divergence and Fisher-information
     def bar_f(_z, _t):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        dx = v
-        dv = - Gamma * beta * forward_fn(_t, _z) - target_potential.gradient(x) - 4 * beta / Gamma * v
-        dz = jnp.concatenate([dx, dv], axis=-1)
-        return dz
+        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
+        return dynamics_fn(_t, _z)
 
     init_data = pde_instance.distribution_0.sample(batch_size=1000, key=jax.random.PRNGKey(1))
     test_time_stamps = pde_instance.test_data[0]

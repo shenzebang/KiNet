@@ -140,3 +140,13 @@ class KineticFokkerPlanck(ProblemInstance):
         log_densities_true = v_v_gaussian_log_density(xs, Sigmas, mus)
 
         return scores_true, log_densities_true
+
+    def forward_fn_to_dynamics(self, forward_fn):
+        def dynamics(t, z):
+            x, v = jnp.split(z, indices_or_sections=2, axis=-1)
+            dx = v
+            dv = - self.Gamma * self.beta * forward_fn(t, z) - self.target_potential.gradient(x) - 4 * self.beta / self.Gamma * v
+            dz = jnp.concatenate([dx, dv], axis=-1)
+            return dz
+
+        return dynamics

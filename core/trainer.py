@@ -72,11 +72,10 @@ class JaxTrainer:
             v_g_etc.pop("grad")
             params_norm = compute_pytree_norm(self.params)
             v_g_etc["params_norm"] = params_norm
-            wandb.log(v_g_etc)
+            wandb.log(v_g_etc, step=epoch)
             if (epoch % self.cfg.test.frequency == 0 and self.method.test_fn is not None) or epoch >= self.cfg.train.number_of_iterations - 3:
                 result_epoch = test(self.params, rng_test)
-                wandb.log(result_epoch)
-                result_epoch["params_norm"] = params_norm
+                wandb.log(result_epoch, step=epoch)
                 if self.cfg.test.verbose:
                     msg = f"In epoch {epoch + 1: 5d}, "
                     for key in v_g_etc:

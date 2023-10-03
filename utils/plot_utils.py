@@ -3,6 +3,41 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import jax.numpy as jnp
+from matplotlib.animation import FuncAnimation, PillowWriter
+import wandb
+import tempfile
+
+def plot_velocity(XV_0T: jnp.ndarray):
+    x_0T, v_0T = jnp.split(XV_0T, indices_or_sections=2, axis=-1)
+    C = jnp.hypot(v_0T[0, :, 0], v_0T[0, :, 1])
+    T, N, D = x_0T.shape
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    quiver = ax.quiver(x_0T[0, :, 0], x_0T[0, :, 1], v_0T[0, :, 0], v_0T[0, :, 1], C, angles='xy', scale_units='xy',
+                       scale=2)
+
+    ax.set_xlim(-10, 10)
+    ax.set_ylim(-10, 10)
+    title = ax.set_title("Time: 0")
+
+    def update(t):
+        C = jnp.hypot(v_0T[t, :, 0], v_0T[t, :, 1])
+        quiver.set_UVC(v_0T[t, :, 0], v_0T[t, :, 1], C=C)
+        quiver.set_offsets(x_0T[t])
+        title.set_text(f"Time: {t}")
+
+    ani = FuncAnimation(fig, update, frames=range(T), interval=200, repeat_delay=2000)
+    # ani.save('./velocity_field.gif', writer='pillow')
+    tf = tempfile.NamedTemporaryFile(dir="./", suffix='.gif')
+
+    writergif = PillowWriter()
+    ani.save(tf.name, writer=writergif)
+    wandb.log({"video": wandb.Video(tf.name, fps=10, format='gif')})
+    plt.close(fig)
+
+
+
+
 
 def plot_scatter_2d(X, mins=np.array([-10, -10]), maxs=np.array([10, 10])):
     T, N, D = X.shape

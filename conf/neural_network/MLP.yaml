@@ -1,7 +1,7 @@
-time_embedding_dim: 0
-n_resblocks: 0
-initialization: kaiming
-hidden_dim: 20
-layers: 8
-activation: relu
+time_embedding_dim: !!int 0
+n_resblocks: !!int 0
+initialization: !!str kaiming
+hidden_dim: !!int 20
+layers: !!int 8
+activation: !!str relu
 
