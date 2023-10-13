@@ -10,7 +10,7 @@ from core.model import get_model
 from utils.common_utils import compute_pytree_norm
 import jax.random as random
 
-def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
+def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
     T = pde_instance.total_evolving_time
     # unpack the data
     z_0 = data["data_initial"]
@@ -164,37 +164,35 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
         # "ODE error ref": jnp.mean(jnp.sum((result_backward["ref"][-1] - states_0["ref"]) ** 2, axis=-1)),
     }
 
-# choose either stochastic gradient estimator or the exact one.
-value_and_grad_fn = value_and_grad_fn_exact
 
 
-def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
-    T = pde_instance.total_evolving_time
-
-    mins = pde_instance.mins
-    maxs = pde_instance.maxs
-    # Define the dynamics
-
-    def bar_f(_z, _t):
-        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
-        return dynamics_fn(_t, _z)
-
-    # sample initial data
-    z_0 = pde_instance.distribution_0.sample(batch_size=1000, key=jax.random.PRNGKey(1))
-    states_0 = [z_0]
-
-    def ode_func1(states, t):
-        z = states[0]
-        dz = bar_f(z, t)
-        return [dz]
-
-    tspace = jnp.linspace(0, T, num=200)
-    result_forward = odeint(ode_func1, states_0, tspace, atol=1e-6, rtol=1e-6)
-    z_0T = result_forward[0]
-    # x_0T, v_0T = jnp.split(z_0T, indices_or_sections=2, axis=-1)
-
-    # plot_scatter_2d(x_0T, mins, maxs)
-    plot_velocity(z_0T)
+# def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
+#     T = pde_instance.total_evolving_time
+#
+#     mins = pde_instance.mins
+#     maxs = pde_instance.maxs
+#     # Define the dynamics
+#
+#     def bar_f(_z, _t):
+#         dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
+#         return dynamics_fn(_t, _z)
+#
+#     # sample initial data
+#     z_0 = pde_instance.distribution_0.sample(batch_size=1000, key=jax.random.PRNGKey(1))
+#     states_0 = [z_0]
+#
+#     def ode_func1(states, t):
+#         z = states[0]
+#         dz = bar_f(z, t)
+#         return [dz]
+#
+#     tspace = jnp.linspace(0, T, num=200)
+#     result_forward = odeint(ode_func1, states_0, tspace, atol=1e-6, rtol=1e-6)
+#     z_0T = result_forward[0]
+#     # x_0T, v_0T = jnp.split(z_0T, indices_or_sections=2, axis=-1)
+#
+#     # plot_scatter_2d(x_0T, mins, maxs)
+#     plot_velocity(z_0T)
 
 
 def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):

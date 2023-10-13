@@ -2,6 +2,6 @@ domain_dim: !!int 3
 domain_min: !!float -10
 domain_max: !!float 10
 boundary_condition: !!str None
-diffusion_coefficient: !!float 2
+diffusion_coefficient: !!float 0
 total_evolving_time: !!float 2
-name: !!str Kinetic-Fokker-Planck
+name: !!str Flocking

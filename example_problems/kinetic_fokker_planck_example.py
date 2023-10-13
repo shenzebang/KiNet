@@ -30,38 +30,39 @@ def Gaussian_Sigma_mu_kinetic_close_form(t, configuration, beta, Gamma):
 v_Gaussian_Sigma_mu_kinetic_close_form = jax.vmap(Gaussian_Sigma_mu_kinetic_close_form, in_axes=[0, None, None, None])
 
 def eval_Gaussian_Sigma_mu_kinetic(configuration, time_stamps, beta, Gamma, tolerance=1e-5):
-    domain_dim = configuration["mu_x_0"].shape[0]
+    # domain_dim = configuration["mu_x_0"].shape[0]
 
-    f_CLD = jnp.array([[0., 1.], [-beta, - 4 * beta / Gamma]])
-    f_kron_eye = jnp.kron(f_CLD, jnp.eye(domain_dim))
-    G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
-    GG_transpose = G @ jnp.transpose(G)
+    # f_CLD = jnp.array([[0., 1.], [-beta, - 4 * beta / Gamma]])
+    # f_kron_eye = jnp.kron(f_CLD, jnp.eye(domain_dim))
+    # G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
+    # GG_transpose = G @ jnp.transpose(G)
 
-    states_0 = {
-        "Sigma": jnp.diag(
-            jnp.concatenate(
-            [jnp.diag(configuration["Sigma_x_0"]), jnp.diag(configuration["Sigma_v_0"])],
-            axis=-1
-            )
-        ),
-        "mu": jnp.concatenate([configuration["mu_x_0"], configuration["mu_v_0"]], axis=-1),
-    }
-
-    def ode_func(states, t):
-        return {
-            "Sigma": f_kron_eye @ states["Sigma"] + jnp.transpose(f_kron_eye @ states["Sigma"]) + jnp.kron(
-            GG_transpose, jnp.eye(domain_dim)),
-            "mu": jnp.matmul(f_kron_eye, states["mu"])
-        }
-
-    states = odeint(ode_func, states_0, time_stamps, atol=tolerance, rtol=tolerance)
+    # states_0 = {
+    #     "Sigma": jnp.diag(
+    #         jnp.concatenate(
+    #         [jnp.diag(configuration["Sigma_x_0"]), jnp.diag(configuration["Sigma_v_0"])],
+    #         axis=-1
+    #         )
+    #     ),
+    #     "mu": jnp.concatenate([configuration["mu_x_0"], configuration["mu_v_0"]], axis=-1),
+    # }
+    #
+    # def ode_func(states, t):
+    #     return {
+    #         "Sigma": f_kron_eye @ states["Sigma"] + jnp.transpose(f_kron_eye @ states["Sigma"]) + jnp.kron(
+    #         GG_transpose, jnp.eye(domain_dim)),
+    #         "mu": jnp.matmul(f_kron_eye, states["mu"])
+    #     }
+    #
+    # states = odeint(ode_func, states_0, time_stamps, atol=tolerance, rtol=tolerance)
 
     # Check the correctness of the closed form solution
     mus_closed_form, Sigmas_closed_form = v_Gaussian_Sigma_mu_kinetic_close_form(time_stamps, configuration, beta, Gamma)
-    print(jnp.mean(jnp.sum((mus_closed_form - states["mu"]) ** 2, axis=-1)))
-    print(jnp.mean(jnp.sum((Sigmas_closed_form - states["Sigma"]) ** 2, axis=(-1, -2,))))
+    # print(jnp.mean(jnp.sum((mus_closed_form - states["mu"]) ** 2, axis=-1)))
+    # print(jnp.mean(jnp.sum((Sigmas_closed_form - states["Sigma"]) ** 2, axis=(-1, -2,))))
 
-    return states["mu"], states["Sigma"]
+    # return states["mu"], states["Sigma"]
+    return mus_closed_form, Sigmas_closed_form
 
 
 # test_time_stamps = jnp.linspace(0, T, num=11)
@@ -103,12 +104,12 @@ def prepare_test_data(configuration, total_evolving_time, beta, Gamma):
 class KineticFokkerPlanck(ProblemInstance):
     def __init__(self, cfg, rng):
         super().__init__(cfg, rng)
-        self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
+
         # To ensure that dx = v dt, we have Gamma == jnp.sqrt(4 * beta) and Gamma * beta == diffusion_coefficient
         self.beta = (self.diffusion_coefficient / 2) ** (2 / 3)
         self.Gamma = 2 * jnp.sqrt(self.beta)
 
-        self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
+
         self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta)
         self.distribution_0 = get_distribution_0(self.initial_configuration)
         self.target_potential = get_potential(self.initial_configuration)
@@ -120,7 +121,6 @@ class KineticFokkerPlanck(ProblemInstance):
         self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
         self.domain_area = (cfg.pde_instance.domain_min - cfg.pde_instance.domain_max) ** (effective_domain_dim)
 
-        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
 

@@ -19,6 +19,8 @@ METHODS = {
 def get_pde_instance(cfg: DictConfig):
     if cfg.pde_instance.name == "Kinetic-Fokker-Planck":
         return KineticFokkerPlanck
+    elif cfg.pde_instance.name == "Flocking":
+        return Flocking
     else:
         return PDE_INSTANCES[f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"]
 

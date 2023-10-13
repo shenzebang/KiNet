@@ -2,17 +2,16 @@ import jax
 from jax.tree_util import tree_flatten, tree_unflatten
 from jax import grad, vjp
 import jax.numpy as jnp
-from utils.common_utils import divergence_fn
+from utils.common_utils import compute_pytree_norm
 from jax.experimental.ode import odeint
-from utils.plot_utils import plot_scatter_2d
 from example_problems.flocking_example import Flocking, conv_fn_vmap
-from core.model import KiNet
+from core.model import get_model
 import jax.random as random
 
 
 
 
-def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance: Flocking):
+def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flocking):
     # unpack the parameters
     ODE_tolerance = config["ODE_tolerance"]
     T = pde_instance.total_evolving_time
@@ -25,11 +24,15 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
     params_flat, params_tree = tree_flatten(params)
 
     def bar_f(_z, _t, _params):
-        x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-        dx = v
-        dv = forward_fn(_params, _t, _z)
-        dz = jnp.concatenate([dx, dv], axis=-1)
-        return dz
+        forward_fn_params = lambda t, z: forward_fn(_params, t, z)
+        dynamics = pde_instance.forward_fn_to_dynamics(forward_fn_params)
+        return dynamics(_t, _z)
+    # def bar_f(_z, _t, _params):
+    #     x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
+    #     dx = v
+    #     dv = forward_fn(_params, _t, _z)
+    #     dz = jnp.concatenate([dx, dv], axis=-1)
+    #     return dz
 
     def f(_z, _t, _params):
         dv_pred = forward_fn(_params, _t, _z)
@@ -96,7 +99,7 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
         def g_t(_z, _params):
             z_train, z_ref = jnp.split(_z, [n_train], axis=0)
             acceleration = f_t(z_train, _params)
-            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref)) ** 2, axis=(1,)))
+            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref)) ** 2, axis=-1))
 
         dxg = grad(g_t, argnums=0)
         dthetag = grad(g_t, argnums=1)
@@ -132,16 +135,11 @@ def value_and_grad_fn_exact(forward_fn, params, data, rng, config, pde_instance:
     # error_ref = jnp.mean(jnp.sum((ref_0 - ref_0_b).reshape(ref_0.shape[0], -1) ** 2, axis=(1,)))
     # loss_b = result_backward[4][-1]
 
-    return loss_f, grad_T
-
-
-# choose either stochastic gradient estimator or the exact one.
-value_and_grad_fn = value_and_grad_fn_exact
-
-
-def plot_fn(forward_fn, config, pde_instance: Flocking, rng):
-    pass
-
+    return {
+        "loss": loss_f,
+        "grad": grad_T,
+        "grad norm": compute_pytree_norm(grad_T),
+    }
 
 def test_fn(forward_fn, config, pde_instance: Flocking, rng):
     z_ground_truth = pde_instance.test_data["z_T"]
@@ -152,10 +150,8 @@ def test_fn(forward_fn, config, pde_instance: Flocking, rng):
 
     return {"relative l2 error": relative_l2}
 
-
 def create_model_fn(pde_instance: Flocking):
-    net = KiNet(output_dim=3, time_embedding_dim=0, append_time=True)
-    params = net.init(random.PRNGKey(11), jnp.zeros(1),
-                      jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+    net = get_model(pde_instance.cfg)
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
     return net, params
 

@@ -4,7 +4,7 @@ from jax import vjp
 import jax.numpy as jnp
 from utils.common_utils import divergence_fn, compute_pytree_norm
 from jax.experimental.ode import odeint
-from utils.plot_utils import plot_scatter_2d
+from utils.plot_utils import plot_velocity
 from example_problems.euler_poisson_example import EulerPoisson, conv_fn_vmap
 from core.model import get_model
 import jax.random as random
@@ -151,6 +151,8 @@ def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
     tspace = jnp.linspace(0, pde_instance.total_evolving_time, 11)
     result_forward = odeint(ode_func1, states_0, tspace, atol=1e-4, rtol=1e-4)
     z_0T = result_forward["z"]
+
+    plot_velocity(z_0T)
 
 
 def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):

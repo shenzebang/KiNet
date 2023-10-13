@@ -1,1 +1,1 @@
-CUDA_VISIBLE_DEVICES=3 python main.py neural_network.layers=4 train.optimizer.weight_decay=0
+CUDA_VISIBLE_DEVICES=3 python main.py train.optimizer.weight_decay=0

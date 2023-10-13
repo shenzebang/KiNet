@@ -47,4 +47,12 @@ class EulerPoissonWithDrift(EulerPoisson):
         return ground_truth_op_vmapx(self.total_evolving_time, xs)
 
     # def ground_truth_t(self, xs: jnp.ndarray, t: jnp.ndarray):
+    def forward_fn_to_dynamics(self, forward_fn):
+        def dynamics(t, z):
+            x, v = jnp.split(z, indices_or_sections=2, axis=-1)
+            dx = v
+            dv = forward_fn(t, x) + self.drift_term(t, x)
+            dz = jnp.concatenate([dx, dv], axis=-1)
+            return dz
 
+        return dynamics

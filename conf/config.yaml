@@ -15,6 +15,9 @@ test:
   batch_size: 50000
   frequency: 100
   verbose: False
+baseline:
+  name: !!str particle method
+  batch_size: !!int 5000
 plot:
   batch_size: 50000
   frequency: 2000

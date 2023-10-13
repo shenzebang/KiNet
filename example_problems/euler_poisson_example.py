@@ -80,8 +80,6 @@ def drift_term(t: jnp.ndarray, x: jnp.ndarray):
 class EulerPoisson(ProblemInstance):
     def __init__(self, cfg, rng):
         super().__init__(cfg, rng)
-        self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
-        self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
         self.distribution_x_0 = distribution_x_0
         self.distribution_0 = distribution_x_0
         self.u_0 = u_0
@@ -92,7 +90,7 @@ class EulerPoisson(ProblemInstance):
         self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
         self.domain_area = (cfg.pde_instance.domain_max - cfg.pde_instance.domain_min) ** effective_domain_dim
 
-        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
+
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
         self.drift_term = self.get_drift_term()

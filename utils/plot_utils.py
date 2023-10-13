@@ -6,14 +6,25 @@ import jax.numpy as jnp
 from matplotlib.animation import FuncAnimation, PillowWriter
 import wandb
 import tempfile
+import warnings
 
 def plot_velocity(XV_0T: jnp.ndarray):
-    x_0T, v_0T = jnp.split(XV_0T, indices_or_sections=2, axis=-1)
-    C = jnp.hypot(v_0T[0, :, 0], v_0T[0, :, 1])
-    T, N, D = x_0T.shape
+    if XV_0T.shape[-1] == 6:
+        plot_velocity_3d(XV_0T)
+    elif XV_0T.shape[-1] == 4:
+        plot_velocity_2d(XV_0T)
+    else:
+        msg = f"Plotting {XV_0T.shape[-1]/2}D problem is not supported! Only 2D and 3D problems are supported."
+        warnings.warn(msg)
+
+
+def plot_velocity_2d(XV_0T: jnp.ndarray):
+    X_0T, V_0T = jnp.split(XV_0T, indices_or_sections=2, axis=-1)
+    C = jnp.hypot(V_0T[0, :, 0], V_0T[0, :, 1])
+    T, N, D = X_0T.shape
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    quiver = ax.quiver(x_0T[0, :, 0], x_0T[0, :, 1], v_0T[0, :, 0], v_0T[0, :, 1], C, angles='xy', scale_units='xy',
+    quiver = ax.quiver(X_0T[0, :, 0], X_0T[0, :, 1], V_0T[0, :, 0], V_0T[0, :, 1], C, angles='xy', scale_units='xy',
                        scale=2)
 
     ax.set_xlim(-10, 10)
@@ -21,9 +32,9 @@ def plot_velocity(XV_0T: jnp.ndarray):
     title = ax.set_title("Time: 0")
 
     def update(t):
-        C = jnp.hypot(v_0T[t, :, 0], v_0T[t, :, 1])
-        quiver.set_UVC(v_0T[t, :, 0], v_0T[t, :, 1], C=C)
-        quiver.set_offsets(x_0T[t])
+        C = jnp.hypot(V_0T[t, :, 0], V_0T[t, :, 1])
+        quiver.set_UVC(V_0T[t, :, 0], V_0T[t, :, 1], C=C)
+        quiver.set_offsets(X_0T[t])
         title.set_text(f"Time: {t}")
 
     ani = FuncAnimation(fig, update, frames=range(T), interval=200, repeat_delay=2000)
@@ -35,8 +46,36 @@ def plot_velocity(XV_0T: jnp.ndarray):
     wandb.log({"video": wandb.Video(tf.name, fps=10, format='gif')})
     plt.close(fig)
 
+def plot_velocity_3d(XV_0T: jnp.ndarray):
+    X_0T, V_0T = jnp.split(XV_0T, indices_or_sections=2, axis=-1)
+    # C = jnp.hypot(V_0T[0, :, 0], V_0T[0, :, 1], )
+    T, N, D = X_0T.shape
 
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(projection='3d')
 
+    quiver = [ax.quiver(X_0T[0, :, 0], X_0T[0, :, 1], X_0T[0, :, 2],
+                        V_0T[0, :, 0], V_0T[0, :, 1], V_0T[0, :, 2])]
+
+    ax.set_xlim(-10, 10)
+    ax.set_ylim(-10, 10)
+    ax.set_zlim(-10, 10)
+    title = ax.set_title("Time: 0")
+
+    def update(t):
+        quiver[0].remove()
+        quiver[0] = ax.quiver(X_0T[t, :, 0], X_0T[t, :, 1], X_0T[t, :, 2],
+                              V_0T[t, :, 0], V_0T[t, :, 1], V_0T[t, :, 2])
+        title.set_text(f"Time: {t}")
+
+    ani = FuncAnimation(fig, update, frames=range(T), interval=200, repeat_delay=2000)
+    # ani.save('./velocity_field.gif', writer='pillow')
+    tf = tempfile.NamedTemporaryFile(dir="./", suffix='.gif')
+
+    writergif = PillowWriter()
+    ani.save(tf.name, writer=writergif)
+    wandb.log({"video": wandb.Video(tf.name, fps=10, format='gif')})
+    plt.close(fig)
 
 
 def plot_scatter_2d(X, mins=np.array([-10, -10]), maxs=np.array([10, 10])):
