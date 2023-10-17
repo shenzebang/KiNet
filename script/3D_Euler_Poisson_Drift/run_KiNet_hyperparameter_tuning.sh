@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=3 python main.py --multirun train.optimizer.weight_decay=0.001 neural_network.hidden_dim=20,30,40 neural_network.layers=3,4,5 plot.frequency=999999

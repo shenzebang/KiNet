@@ -11,14 +11,7 @@ from utils.common_utils import compute_pytree_norm
 import jax.random as random
 
 def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
-    T = pde_instance.total_evolving_time
-    # unpack the data
-    z_0 = data["data_initial"]
-    xi_0 = pde_instance.distribution_0.score(z_0)
-
     params_flat, params_tree = tree_flatten(params)
-
-
 
     def bar_f(_z, _t, _params):
         forward_fn_params = lambda t, z: forward_fn(_params, t, z)
@@ -31,121 +24,117 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
 
     # compute x(T) by solve IVP (I)
     # ================ Forward ===================
-    loss_0 = jnp.zeros([])
-    states_0 = [z_0, xi_0, loss_0]
+    states_0 = {
+        "z": data["data_initial"],
+        "xi": pde_instance.distribution_0.score(data["data_initial"]),
+        "loss": jnp.zeros([])
+    }
 
     def ode_func1(states, t):
-        z = states[0]
-        xi = states[1]
         f_t_theta = lambda _x: f(_x, t, params)
         bar_f_t_theta = lambda _x: bar_f(_x, t, params)
-        dz = bar_f_t_theta(z)
 
-        def h_t_theta(in_1, in_2):
-            # in_1 is xi
-            # in_2 is z
-            # in_3 is theta
+        def h_t_theta(xi, z):
             div_bar_f_t_theta = lambda _z: divergence_fn(bar_f_t_theta, _z).sum(axis=0)
             grad_div_fn = grad(div_bar_f_t_theta)
-            h1 = - grad_div_fn(in_2)
-            _, vjp_fn = vjp(bar_f_t_theta, in_2)
-            h2 = - vjp_fn(in_1)[0]
+            h1 = - grad_div_fn(z)
+            _, vjp_fn = vjp(bar_f_t_theta, z)
+            h2 = - vjp_fn(xi)[0]
             return h1 + h2
 
-        dxi = h_t_theta(xi, z)
-
-        def g_t(in_1, in_2):
-            # in_1 is xi
-            # in_2 is z
-            f_t_theta_in_2 = f_t_theta(in_2)
-            score_x, score_v = jnp.split(in_1, indices_or_sections=2, axis=-1)
+        def g_t(xi, z):
+            f_t_theta_in_2 = f_t_theta(z)
+            score_x, score_v = jnp.split(xi, indices_or_sections=2, axis=-1)
             return jnp.mean(jnp.sum((f_t_theta_in_2 - score_v) ** 2, axis=(1,)))
 
-        dloss = g_t(xi, z)
+        return {
+            "z": bar_f_t_theta(states["z"]),
+            "xi": h_t_theta(states["xi"], states["z"]),
+            "loss": g_t(states["xi"], states["z"]),}
 
-        return [dz, dxi, dloss]
-
-    tspace = jnp.array((0., T))
+    tspace = jnp.array((0., pde_instance.total_evolving_time))
     result_forward = odeint(ode_func1, states_0, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
-    z_T = result_forward[0][1]
-    xi_T = result_forward[1][1]
-    loss_f = result_forward[2][1]
+    z_T = result_forward["z"][-1]
+    xi_T = result_forward["xi"][-1]
+    loss_f = result_forward["loss"][-1]
     # ================ Forward ===================
 
     # ================ Backward ==================
     # compute dl/d theta via adjoint method
-    a_T = jnp.zeros_like(z_T)
-    b_T = jnp.zeros_like(z_T)
-    grad_T = [jnp.zeros_like(_var) for _var in params_flat]
-    loss_T = jnp.zeros([])
-    states_T = [z_T, a_T, b_T, xi_T, loss_T, grad_T]
+    states_T = {
+        "z": z_T,
+        "a": jnp.zeros_like(z_T),
+        "b": jnp.zeros_like(xi_T),
+        "xi": xi_T,
+        "loss": jnp.zeros([]),
+        "grad": [jnp.zeros_like(_var) for _var in params_flat]
+    }
 
     def ode_func2(states, t):
-        t = T - t
-        z = states[0]
-        a = states[1]
-        b = states[2]
-        xi = states[3]
+        t = pde_instance.total_evolving_time - t
 
         f_t = lambda _x, _params: f(_x, t, _params)
         bar_f_t = lambda _x, _params: bar_f(_x, t, _params)
-        dx = bar_f_t(z, params)
 
-        _, vjp_fx_fn = vjp(lambda _x: bar_f_t(_x, params), z)
-        vjp_fx_a = vjp_fx_fn(a)[0]
-        _, vjp_ftheta_fn = vjp(lambda _params: bar_f_t(z, _params), params)
-        vjp_ftheta_a = vjp_ftheta_fn(a)[0]
+        _, vjp_fx_fn = vjp(lambda _x: bar_f_t(_x, params), states["z"])
+        vjp_fx_a = vjp_fx_fn(states["a"])[0]
+        _, vjp_ftheta_fn = vjp(lambda _params: bar_f_t(states["z"], _params), params)
+        vjp_ftheta_a = vjp_ftheta_fn(states["a"])[0]
 
-        def h_t(in_1, in_2, in_3):
+        def h_t(xi, z, theta):
             # in_1 is xi
             # in_2 is z
             # in_3 is theta
-            bar_f_t_theta = lambda _z: bar_f_t(_z, in_3)
+            bar_f_t_theta = lambda _z: bar_f_t(_z, theta)
             div_bar_f_t_theta = lambda _z: divergence_fn(bar_f_t_theta, _z).sum(axis=0)
             grad_div_fn = grad(div_bar_f_t_theta)
-            h1 = - grad_div_fn(in_2)
-            _, vjp_fn = vjp(bar_f_t_theta, in_2)
-            h2 = - vjp_fn(in_1)[0]
+            h1 = - grad_div_fn(z)
+            _, vjp_fn = vjp(bar_f_t_theta, z)
+            h2 = - vjp_fn(xi)[0]
             return h1 + h2
 
-        _, vjp_hxi_fn = vjp(lambda _xi: h_t(_xi, z, params), xi)
-        vjp_hxi_b = vjp_hxi_fn(b)[0]
-        _, vjp_hx_fn = vjp(lambda _x: h_t(xi, _x, params), z)
-        vjp_hx_b = vjp_hx_fn(b)[0]
-        _, vjp_htheta_fn = vjp(lambda _params: h_t(xi, z, _params), params)
-        vjp_htheta_b = vjp_htheta_fn(b)[0]
+        _, vjp_hxi_fn = vjp(lambda _xi: h_t(_xi, states["z"], params), states["xi"])
+        vjp_hxi_b = vjp_hxi_fn(states["b"])[0]
+        _, vjp_hx_fn = vjp(lambda _x: h_t(states["xi"], _x, params), states["z"])
+        vjp_hx_b = vjp_hx_fn(states["b"])[0]
+        _, vjp_htheta_fn = vjp(lambda _params: h_t(states["xi"], states["z"], _params), params)
+        vjp_htheta_b = vjp_htheta_fn(states["b"])[0]
 
-        def g_t(in_1, in_2, in_3):
+        def g_t(xi, z, theta):
             # in_1 is xi
             # in_2 is z
             # in_3 is theta
-            f_t_in_2_in_3 = f_t(in_2, in_3)
-            score_x, score_v = jnp.split(in_1, indices_or_sections=2, axis=-1)
+            f_t_in_2_in_3 = f_t(z, theta)
+            score_x, score_v = jnp.split(xi, indices_or_sections=2, axis=-1)
             return jnp.mean(jnp.sum((f_t_in_2_in_3 - score_v) ** 2, axis=(1,)))
 
         dxig = grad(g_t, argnums=0)
         dxg = grad(g_t, argnums=1)
         dthetag = grad(g_t, argnums=2)
 
-        da = - vjp_fx_a - vjp_hx_b - dxg(xi, z, params)
-        db = - vjp_hxi_b - dxig(xi, z, params)
-        dxi = h_t(xi, z, params)
-        dloss = g_t(xi, z, params)[None]
+        da = - vjp_fx_a - vjp_hx_b - dxg(states["xi"], states["z"], params)
+        db = - vjp_hxi_b - dxig(states["xi"], states["z"], params)
 
         vjp_ftheta_a_flat, _ = tree_flatten(vjp_ftheta_a)
         vjp_htheta_b_flat, _ = tree_flatten(vjp_htheta_b)
-        dthetag_flat, _ = tree_flatten(dthetag(xi, z, params))
+        dthetag_flat, _ = tree_flatten(dthetag(states["xi"], states["z"], params))
         dgrad = [_dgrad1 + _dgrad2 + _dgrad3 for _dgrad1, _dgrad2, _dgrad3 in
                  zip(vjp_ftheta_a_flat, vjp_htheta_b_flat, dthetag_flat)]
-        # dgrad = vjp_ftheta_a + vjp_htheta_b + dthetag(xi, x, params)
 
-        return [-dx, -da, -db, -dxi, dloss, dgrad]
+        return {
+            "z": -bar_f_t(states["z"], params),
+            "a": -da,
+            "b": -db,
+            "xi": -h_t(states["xi"], states["z"], params),
+            "loss": g_t(states["xi"], states["z"], params),
+            "grad": dgrad
+        }
 
     # ================ Backward ==================
-    tspace = jnp.array((0., T))
+    tspace = jnp.array((0., pde_instance.total_evolving_time))
     result_backward = odeint(ode_func2, states_T, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
 
-    grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward[5]])
+    grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]])
     # x_0_b = result_backward[0][-1]
     # ref_0_b = result_backward[6][-1]
     # xi_0_b = result_backward[3][-1]
@@ -160,8 +149,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
         "loss": loss_f,
         "grad": grad_T,
         "grad norm": grad_norm,
-        # "ODE error x": jnp.mean(jnp.sum((result_backward["z"][-1] - states_0["z"]) ** 2, axis=-1)),
-        # "ODE error ref": jnp.mean(jnp.sum((result_backward["ref"][-1] - states_0["ref"]) ** 2, axis=-1)),
+        "ODE error x": jnp.mean(jnp.sum((result_backward["z"][-1] - states_0["z"]) ** 2, axis=-1)),
     }
 
 

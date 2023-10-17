@@ -34,7 +34,9 @@ def main(cfg):
         # Set the project where this run will be logged
         project=f"{pde_instance_name}-{cfg.solver.name}-{cfg.pde_instance.total_evolving_time}",
         # Track hyperparameters and run metadata
-        config=OmegaConf.to_container(cfg)
+        config=OmegaConf.to_container(cfg),
+        # hyperparameter tuning mode or normal mode.
+        # name=cfg.mode
     )
 
     rng_problem, rng_method, rng_trainer = random.split(random.PRNGKey(cfg.seed), 3)

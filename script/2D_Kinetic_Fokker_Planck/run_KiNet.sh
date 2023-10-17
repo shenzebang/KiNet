@@ -1,1 +1,0 @@
-python main.py --PDE 2D-Kinetic-Fokker-Planck --method KiNet --boundary_condition None --domain_dim 2 --number_of_iterations 20000 --learning_rate 3e-4 --total_evolving_time 1 --domain_min -4. --domain_max 4. --batch_size_initial 100

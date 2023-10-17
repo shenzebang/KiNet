@@ -1,4 +1,4 @@
-domain_dim: !!int 3
+domain_dim: !!int 4
 domain_min: !!float -10
 domain_max: !!float 10
 boundary_condition: !!str None
