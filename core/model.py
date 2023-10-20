@@ -99,6 +99,9 @@ class KiNet(nn.Module):
         # self.act = jax.nn.relu
 
     def __call__(self, t: jnp.ndarray, z: jnp.ndarray):
+        assert t.ndim == 0 or (t.ndim == 1 and len(t) == 1)
+
+
         if t.ndim == 0:
             t = jnp.ones(1) * t
 

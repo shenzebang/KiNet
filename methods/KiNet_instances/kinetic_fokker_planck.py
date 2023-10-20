@@ -9,6 +9,7 @@ from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from core.model import get_model
 from utils.common_utils import compute_pytree_norm
 import jax.random as random
+import optax
 
 def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
     params_flat, params_tree = tree_flatten(params)
@@ -245,5 +246,52 @@ def create_model_fn(pde_instance: KineticFokkerPlanck):
     params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
     # params = net.init(random.PRNGKey(11), jnp.zeros(1),
     #                   jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
+
+    print("Pretraining the hypothesis velocity field using the initial data to improve the performance.")
+    params = velocity_field_pretraining(pde_instance=pde_instance, net=net, params=params)
+    print("Finished pretraining.")
+
     return net, params
 
+def velocity_field_pretraining(pde_instance: KineticFokkerPlanck, net, params):
+    # create an optimizer for pretrain
+    optimizer = optax.chain(optax.adaptive_grad_clip(1),
+                                    optax.add_decayed_weights(1e-3),
+                                    optax.sgd(learning_rate=1e-2, momentum=0.9)
+                                    )
+    opt_state = optimizer.init(params)
+
+    pretrain_steps = 4096
+    # pretrain using the initial data
+    key_pretrains = random.split(random.PRNGKey(2199), pretrain_steps)
+
+
+    # create time stamps:
+    time_stampes = jnp.linspace(0, pde_instance.total_evolving_time, 128)
+    
+    def pretrain_loss_fn(params, t, data):
+        score_xv_true = pde_instance.distribution_0.score(data)
+        _, score_v_true = jnp.split(score_xv_true, 2, axis=-1)
+        return jnp.mean(jnp.sum((net.apply(params, t, data) - score_v_true) ** 2, axis=-1))
+    
+    pretrain_loss_fn = jax.vmap(pretrain_loss_fn, in_axes=[None, 0, None])
+
+    def loss_fn(params, t, data):
+        return jnp.mean(pretrain_loss_fn(params, t, data))
+    
+    grad_fn = jax.grad(loss_fn,)
+    grad_fn = jax.jit(grad_fn)
+
+    for key_pretrain in key_pretrains:
+        # sample from initial distribution
+        data_initial = pde_instance.distribution_0.sample(256, key_pretrain)
+        
+        grad = grad_fn(params, time_stampes, data_initial)
+
+        updates, opt_state = optimizer.update(grad, opt_state, params)
+        params = optax.apply_updates(params, updates)
+
+    return params
+
+        
+    

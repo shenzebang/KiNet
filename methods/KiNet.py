@@ -1,10 +1,9 @@
 import methods.KiNet_instances.kinetic_fokker_planck as kinetic_fokker_planck
 import methods.KiNet_instances.euler_poisson as euler_poisson
 import methods.KiNet_instances.flocking as flocking
-from api import Method, ProblemInstance
+from api import Method
 from functools import partial
 import jax.random as random
-import jax.numpy as jnp
 INSTANCES = {
     '2D-Kinetic-Fokker-Planck'  : kinetic_fokker_planck,
     '3D-Euler-Poisson'          : euler_poisson,
