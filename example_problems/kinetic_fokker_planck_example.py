@@ -124,7 +124,8 @@ class KineticFokkerPlanck(ProblemInstance):
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
 
-    def ground_truth(self, xs: jnp.ndarray):
+    def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
+        # TODO: revise the implementation of the ground truth fn for FPE to accept any testing time.
         _, mus, Sigmas = self.test_data
 
         if xs.ndim == 3:

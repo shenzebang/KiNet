@@ -233,7 +233,7 @@ def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     log_densities = result_forward[1]  # the first axis is time, the second axis is batch
     scores = result_forward[2]  # the first axis is time, the second axis is batch, the last axis is problem dimension
 
-    scores_true, log_densities_true = pde_instance.ground_truth(xs)
+    scores_true, log_densities_true = pde_instance.ground_truth(test_time_stamps, xs)
 
     KL = jnp.mean(log_densities - log_densities_true, axis=(0, 1))
     Fisher_information = jnp.mean(jnp.sum((scores - scores_true) ** 2, axis=-1), axis=(0, 1))

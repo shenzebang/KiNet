@@ -25,10 +25,15 @@ def coulomb_potential_uniform_fn(t: jnp.ndarray, xi: jnp.ndarray):
     return jnp.piecewise(xi_norm, conditions, functions)
 
 def ground_truth_op_uniform(t: jnp.ndarray, x: jnp.ndarray):
+    assert t.ndim == 0 or (t.ndim == 1 and len(t) == 1)
+    if t.ndim == 1:
+        t = t[0]
+
     coulomb_field_uniform = jax.grad(coulomb_potential_uniform_fn, argnums=1)
     return -coulomb_field_uniform(t, x)
 
 ground_truth_op_vmapx = jax.vmap(ground_truth_op_uniform, in_axes=[None, 0])
+ground_truth_op_vmapx_vmapt = jax.vmap(ground_truth_op_vmapx, in_axes=[0, None])
 
 class EulerPoissonWithDrift(EulerPoisson):
     def __init__(self, cfg, rng):
@@ -43,8 +48,13 @@ class EulerPoissonWithDrift(EulerPoisson):
         x_test = self.distribution_0.sample(self.cfg.test.batch_size, random.PRNGKey(1234))
         return {"x_T": x_test, }
 
-    def ground_truth(self, xs: jnp.ndarray):
-        return ground_truth_op_vmapx(self.total_evolving_time, xs)
+    def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
+        assert ts.ndim == 0 or ts.ndim == 1
+        if ts.ndim == 0:
+            ts = ts * jnp.ones(1)
+        
+        return ground_truth_op_vmapx_vmapt(ts, xs)
+        
 
     # def ground_truth_t(self, xs: jnp.ndarray, t: jnp.ndarray):
     def forward_fn_to_dynamics(self, forward_fn):

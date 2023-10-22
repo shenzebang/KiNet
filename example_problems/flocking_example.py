@@ -131,8 +131,12 @@ class Flocking(ProblemInstance):
         relative_l2 = l2_error / l2
         print(f"The particle method baseline with {self.cfg.baseline.batch_size} particles has relative l2 error {relative_l2}.")
 
-    def ground_truth(self, zs: jnp.ndarray):
+    def ground_truth(self, ts: jnp.ndarray, zs: jnp.ndarray):
         # return the ground truth acceleration at t = self.total_evolving_time
+        # assert ts.ndim == 0 or ts.ndim == 1
+        # if ts.ndim == 0:
+        #     ts = ts * jnp.ones(1)
+        warnings.warn("In the flocking model, only the ground truth at the terminal time is known!")
 
         return conv_fn_vmap(zs, self.test_data["z_T"])
 

@@ -157,12 +157,13 @@ def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
 
 def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
     x_ground_truth = pde_instance.test_data["x_T"]
-    conv_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, x_ground_truth)
-    conv_true = pde_instance.ground_truth(x_ground_truth)
-    relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((conv_pred - conv_true) ** 2, axis=-1)))
-    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(conv_true ** 2, axis=-1)))
-
-    return {"relative l2 error": relative_l2}
+    test_time_stamps = jnp.linspace(0, pde_instance.total_evolving_time, 11)
+    forward_fn_vmapt = jax.vmap(forward_fn, in_axes=[0, None])
+    conv_pred = forward_fn_vmapt(test_time_stamps, x_ground_truth)
+    conv_true = pde_instance.ground_truth(test_time_stamps, x_ground_truth)
+    relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((conv_pred - conv_true) ** 2, axis=-1)), axis=-1)
+    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(conv_true ** 2, axis=-1)), axis=-1)
+    return {"relative l2 error (average over time)": jnp.mean(relative_l2), "relative l2 error (maximum over time)": jnp.max(relative_l2)}
 
 
 def create_model_fn(pde_instance: EulerPoisson):

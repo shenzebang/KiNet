@@ -29,7 +29,7 @@ class ProblemInstance:
         self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
         self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
 
-    def ground_truth(self, xs: jnp.ndarray):
+    def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
         # Should return the test time stamp and the corresponding ground truth
         raise NotImplementedError
 
