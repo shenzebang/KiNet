@@ -17,6 +17,9 @@ class Distribution(ABC):
 
     def logdensity(self, x: jnp.ndarray):
         raise NotImplementedError
+    
+    def density(self, x: jnp.ndarray):
+        raise NotImplementedError
 
 
 class DistributionKinetic(Distribution):

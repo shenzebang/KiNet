@@ -16,7 +16,7 @@ def get_optimizer(optimizer_cfg: DictConfig):
         else:
             raise NotImplementedError
 
-        optimizer = optax.chain(optax.adaptive_grad_clip(optimizer_cfg.grad_clipping.threshold),
+        optimizer = optax.chain(optax.clip(optimizer_cfg.grad_clipping.threshold),
                                 optax.add_decayed_weights(optimizer_cfg.weight_decay),
                                 optax.sgd(learning_rate=lr_schedule, momentum=optimizer_cfg.momentum)
                                 )

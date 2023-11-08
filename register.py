@@ -5,12 +5,6 @@ from methods.KiNet import KiNet
 from methods.PINN import PINN
 from omegaconf import DictConfig
 
-# Methods
-METHODS = {
-    'KiNet' : KiNet,
-    'PINN'  : PINN,
-}
-
 def get_pde_instance(cfg: DictConfig):
     if cfg.pde_instance.name == "Kinetic-Fokker-Planck":
         return KineticFokkerPlanck
@@ -22,4 +16,9 @@ def get_pde_instance(cfg: DictConfig):
         return NotImplementedError
 
 def get_method(cfg: DictConfig):
-    return METHODS[cfg.solver.name]
+    if cfg.solver.name == "KiNet":
+        return KiNet
+    elif cfg.solver.name == "PINN":
+        return PINN
+    else:
+        raise NotImplementedError

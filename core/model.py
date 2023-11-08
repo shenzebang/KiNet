@@ -11,14 +11,11 @@ class MLP(nn.Module):
     output_dim: int = 1
     hidden_dims: Tuple[int] = (20, 20, 20, 20, 20, 20, 20, 20,)
     # hidden_dims: Tuple[int] = (30, 30, 30, 30, 30, 30, 30, 30,)
-    scaling: float = 1.
     use_normalization: bool = False
     time_embedding_dim: int = 0
-    append_time: bool = True
 
     def setup(self):
         self.layers = [nn.Dense(dim_out) for dim_out in list(self.hidden_dims) + [self.output_dim]]
-        self.layers_time = [nn.Dense(dim_out) for dim_out in list(self.hidden_dims) + [self.output_dim]]
         self.normalizations = [nn.LayerNorm() for _ in list(self.hidden_dims) + [self.output_dim]]
         if self.time_embedding_dim > 0:
             self.time_embedding = TimeEmbedding(dim=20,)
@@ -26,38 +23,27 @@ class MLP(nn.Module):
         # self.act = jax.nn.relu
         self.act = jax.nn.tanh
 
-    def __call__(self, t: jnp.ndarray, z: jnp.ndarray):
-        # if t.ndim != 2 or t.shape[1] != 1:
-        #     raise ValueError("t should be a 2D array and the second dimension should be 1")
-        #
-        # if x.ndim != 2:
-        #     raise ValueError("x should be a 2D array")
+    def __call__(self, t: jnp.ndarray, x: jnp.ndarray):
+        # z can be batched input, but t should be a single input
+        assert t.ndim == 0 or (t.ndim == 1 and len(t) == 1)
+        assert x.ndim == 1 or x.ndim == 2
 
-        if z.ndim == 2 and z.shape[0] != t.shape[0]:
-            raise ValueError("x.shape[0] should agree with t.shape[0]")
+        if t.ndim == 0:
+            t = jnp.ones(1) * t
 
-        assert t.ndim == 1 and z.ndim == 1
-        # tx = jnp.concatenate([t, x], axis=-1)
-        # y = tx
         if self.time_embedding_dim > 0:
             t = self.time_embedding(t)
-        if self.append_time:
-            y = jnp.concatenate([t, z], axis=-1)
-        else:
-            y = z
-        for i, (layer, layer_t, normalization) in enumerate(zip(self.layers, self.layers_time, self.normalizations)):
-            y = layer(y)
-            if i < len(self.layers) - 1:
-                if not self.append_time and self.time_embedding_dim > 0:
-                    time_t = layer_t(t)
-                    y = y + time_t
-                if self.use_normalization:
-                    y = self.act(normalization(y))
-                else:
-                    y = self.act(y)
 
-        # return jax.nn.relu(y)
-        return jnp.exp(y) * self.scaling
+        if x.ndim == 2:
+            t = jnp.broadcast_to(t, (x.shape[0], t.shape[0]))
+        x = jnp.concatenate([t, x], axis=-1)
+        
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
+            if i < len(self.layers) - 1:
+                x = self.act(x)
+
+        return x
 
     # def __call__(self, t: jnp.ndarray, x: jnp.ndarray):
     #     # if t.ndim != 2 or t.shape[1] != 1:
@@ -306,6 +292,8 @@ def get_model(cfg, DEBUG=False, pde_instance=None):
             if cfg.pde_instance.name == "Kinetic-Fokker-Planck":
                 model = DEBUG_KFP(pde_instance)
             else:
-                raise NotImplementedError
+                model = KiNet_Debug(output_dim=cfg.pde_instance.domain_dim,
+                          time_embedding_dim=cfg.neural_network.time_embedding_dim,
+                          hidden_dims=[cfg.neural_network.hidden_dim] * cfg.neural_network.layers)
         return model
 

@@ -167,7 +167,7 @@ def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
 
 
 def create_model_fn(pde_instance: EulerPoisson):
-    net = get_model(pde_instance.cfg)
+    net = get_model(pde_instance.cfg, DEBUG=False)
     # net = KiNet(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug_2(output_dim=3, time_embedding_dim=0)

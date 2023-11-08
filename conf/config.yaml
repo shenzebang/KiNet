@@ -32,7 +32,6 @@ train:
       initial: 0.001
       scheduling: None
     grad_clipping:
-      type: adaptive
       threshold: 1
 ODE_tolerance: !!float 1e-5
 seed: 1

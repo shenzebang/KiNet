@@ -12,25 +12,35 @@ INSTANCES = {
 
 class PINN(Method):
     def create_model_fn(self):
-        return INSTANCES[self.args.PDE].create_model_fn(self.pde_instance)
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.create_model_fn(self.pde_instance)
+        elif "Euler-Poisson" in self.pde_instance.instance_name:
+            return euler_poisson.create_model_fn(self.pde_instance)
+        else:
+            raise NotImplementedError
 
 
     def test_fn(self, forward_fn, params, rng):
 
         forward_fn = partial(forward_fn, params)
         config_test = {}
-
-        return INSTANCES[self.args.PDE].test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
                                                 rng=rng)
+        elif "Euler-Poisson" in self.pde_instance.instance_name:
+            return euler_poisson.test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
+                                                rng=rng)
+        else:
+            raise NotImplementedError
 
     def plot_fn(self, forward_fn, params, rng):
+        pass
+        # forward_fn = partial(forward_fn, params)
 
-        forward_fn = partial(forward_fn, params)
+        # config_plot = {}
 
-        config_plot = {}
-
-        return INSTANCES[self.args.PDE].plot_fn(forward_fn=forward_fn, config=config_plot, pde_instance=self.pde_instance,
-                                                rng=rng)
+        # return INSTANCES[self.args.PDE].plot_fn(forward_fn=forward_fn, config=config_plot, pde_instance=self.pde_instance,
+        #                                         rng=rng)
 
     def value_and_grad_fn(self, forward_fn, params, rng):
         rng_sample, rng_vg = random.split(rng, 2)
@@ -43,23 +53,28 @@ class PINN(Method):
             "mass_change": 1
         }
         config_train = {
-            "ODE_tolerance" : self.args.ODE_tolerance,
+            "ODE_tolerance" : self.cfg.ODE_tolerance,
             "weights": weights,
         }
-        return INSTANCES[self.args.PDE].value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
+        if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
+            return kinetic_fokker_planck.value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
                                                           config=config_train, pde_instance=self.pde_instance)
+        elif "Euler-Poisson" in self.pde_instance.instance_name:
+            return euler_poisson.value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
+                                                          config=config_train, pde_instance=self.pde_instance)
+        else:
+            raise NotImplementedError
 
     def sample_data(self, rng):
         rng_train_t, rng_train_domain, rng_initial = random.split(rng, 3)
-        time_0 = jnp.zeros([self.args.batch_size_initial, 1])
-        data_0 = self.pde_instance.distribution_domain.sample(self.args.batch_size_initial, rng_initial)
-        density_0 = jnp.exp(self.pde_instance.distribution_0.logdensity(data_0))
+        data_0 = self.pde_instance.distribution_domain.sample(self.cfg.solver.train.batch_size_initial, rng_initial)
+        # density_0 = jnp.exp(self.pde_instance.distribution_0.logdensity(data_0))
 
 
         time_train = self.pde_instance.distribution_t.sample(10, rng_train_t)
-        data_train = self.pde_instance.distribution_domain.sample(self.args.batch_size, rng_train_domain)
+        data_train = self.pde_instance.distribution_domain.sample(self.cfg.solver.train.batch_size, rng_train_domain)
         data = {
-            "data_initial": (time_0, data_0, density_0),
+            "data_initial": data_0,
             "data_train": (time_train, data_train),
         }
         return data

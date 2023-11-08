@@ -1,21 +1,20 @@
 import jax
-import functools
 from jax import jacrev
 import jax.numpy as jnp
 from utils.plot_utils import plot_density_2d
-from core.distribution import Uniform
 from core.model import MLP
-from example_problems.euler_poisson_example import EulerPoisson
-from core.normalizing_flow import RealNVP, MNF
+from example_problems.euler_poisson_with_drift import EulerPoissonWithDrift
+# from core.normalizing_flow import RealNVP, MNF
 import jax.random as random
-from functools import partial
 from flax import linen as nn
 from typing import List
+import optax
+from utils.common_utils import compute_pytree_norm
 
-def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoisson):
+def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoissonWithDrift):
     weights = config["weights"]
     # unpack data
-    time_initial, space_initial, target_initial = data["data_initial"]
+    space_initial = data["data_initial"]
     time_train, space_train, = data["data_train"]
 
     def model_loss(_params):
@@ -24,22 +23,22 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
         nabla_phi_fn = lambda t, z: forward_fn(_params, t, z, ["nabla_phi"])["nabla_phi"]
         # ====================================================================================================
         # residual
-        def euler_poisson_equation(t, z):
-            mu_t = jacrev(mu_fn, argnums=0,)(t, z)[0]
+        def euler_poisson_equation(t, x):
+            mu_t = jacrev(mu_fn, argnums=0,)(t, x)[0]
 
-            u_mu_fn = lambda t, z: mu_fn(t, z) * u_fn(t, z)
+            u_mu_fn = lambda t, x: mu_fn(t, x) * u_fn(t, x)
             jac_u_mu_fn = jax.jacfwd(u_mu_fn, argnums=1)
-            div_u_mu = jnp.sum(jnp.diag(jac_u_mu_fn(t, z)))
+            div_u_mu = jnp.sum(jnp.diag(jac_u_mu_fn(t, x)))
             term_1 = (mu_t + div_u_mu) ** 2
 
-            u_t = jacrev(u_fn, argnums=0, )(t, z)[0]
-            uu_fn = lambda _z: jnp.dot(u_fn(t, _z), u_fn(t, z))
+            u_t = jacrev(u_fn, argnums=0, )(t, x)[0]
+            uu_fn = lambda _x: jnp.dot(u_fn(t, _x), u_fn(t, x))
             u_nabla_u_fn = jax.grad(uu_fn)
-            term_2 = jnp.sum((u_t + u_nabla_u_fn(z) + nabla_phi_fn(t, z))**2, axis=-1)
+            term_2 = jnp.sum((u_t + u_nabla_u_fn(x) + nabla_phi_fn(t, x) - pde_instance.drift_term(t, x))**2, axis=-1)
 
             jac_nabla_phi_fn = jax.jacfwd(nabla_phi_fn, argnums=1)
-            laplacian_phi = jnp.sum(jnp.diag(jac_nabla_phi_fn(t, z)))
-            term_3 = jnp.sum((laplacian_phi + mu_fn(t, z)) ** 2, axis=-1)
+            laplacian_phi = jnp.sum(jnp.diag(jac_nabla_phi_fn(t, x)))
+            term_3 = (laplacian_phi + mu_fn(t, x)) ** 2
 
             return term_1 + term_2 + term_3
 
@@ -63,144 +62,151 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
 
         # ====================================================================================================
         # initial loss
-        vv_mu_fn = jax.vmap(jax.vmap(mu_fn, in_axes=(None, 0)), in_axes=(0, None))
-        mu_pred_initial = vv_mu_fn(time_initial, space_initial)
-        loss_mu_initial = jnp.mean((mu_pred_initial - target_initial[:, None]) ** 2)
+        mu_fn_vmapx = jax.vmap(mu_fn, in_axes=(None, 0))
+        mu_pred_initial = mu_fn_vmapx(jnp.zeros([]), space_initial)
+        loss_mu_initial = jnp.mean((mu_pred_initial - pde_instance.mu_0(space_initial)) ** 2)
 
-        vv_u_fn = jax.vmap(jax.vmap(u_fn, in_axes=(None, 0)), in_axes=(0, None))
-        u_pred_initial = vv_u_fn(time_initial, space_initial)
-        loss_u_initial = jnp.mean((u_pred_initial - pde_instance.u_0(space_initial)[:, None]) ** 2)
+        u_fn_vmapx = jax.vmap(u_fn, in_axes=(None, 0))
+        u_pred_initial = u_fn_vmapx(jnp.zeros([]), space_initial)
+        loss_u_initial = jnp.mean(jnp.sum((u_pred_initial - pde_instance.u_0(space_initial)) ** 2, axis=-1))
+
+        nabla_phi_fn_vmapx = jax.vmap(nabla_phi_fn, in_axes=(None, 0))
+        nabla_phi_pred_initial = nabla_phi_fn_vmapx(jnp.zeros([]), space_initial)
+        loss_nabla_phi_initial = jnp.mean(jnp.sum((nabla_phi_pred_initial - pde_instance.nabla_phi_0(space_initial)) ** 2, axis=-1))
+
         # ====================================================================================================
 
         # ====================================================================================================
         # total loss = (loss of initial condition) + (loss of residual) + (loss of mass change)
-        loss_initial = loss_u_initial + loss_mu_initial
-        loss_residual = jnp.mean(residual ** 2)
+        loss_initial = loss_u_initial + loss_mu_initial + loss_nabla_phi_initial
+        loss_residual = jnp.mean(residual)
         loss_mass_change = jnp.mean(mass_change_total ** 2)
         # ====================================================================================================
 
-        return loss_initial * weights["weight_initial"] + loss_residual * weights["weight_train"]\
-                + loss_mass_change * weights["mass_change"]
+        return loss_initial * weights["weight_initial"] + loss_residual * weights["weight_train"] + loss_mass_change * weights["mass_change"]
 
     v_g = jax.value_and_grad(model_loss)
     value, grad = v_g(params)
-    return value, grad
+
+    return {"PINN loss": value, "grad": grad, "grad norm": compute_pytree_norm(grad)}
 
 
-def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
-    nabla_phi_fn = lambda t, z: forward_fn(t, z, ["nabla_phi"])["nabla_phi"]
+def test_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
+    nabla_phi_fn = lambda t, x: forward_fn(t, x, ["nabla_phi"])["nabla_phi"]
     nabla_phi_fn = jax.vmap(nabla_phi_fn, in_axes=[None, 0])
     x_ground_truth = pde_instance.test_data["x_T"]
     acceleration_pred = - nabla_phi_fn(jnp.ones(1) * pde_instance.total_evolving_time, x_ground_truth)
-    acceleration_true = pde_instance.ground_truth(x_ground_truth)
+    acceleration_true = pde_instance.ground_truth(jnp.ones(1) * pde_instance.total_evolving_time, x_ground_truth)
     relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((acceleration_pred - acceleration_true) ** 2, axis=-1)))
-    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum((acceleration_true) ** 2, axis=-1)))
+    relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(acceleration_true ** 2, axis=-1)))
 
     return {"relative l2 error": relative_l2}
-    # mins = pde_instance.mins
-    # maxs = pde_instance.maxs
-    # domain_area = pde_instance.domain_area
-    #
-    # # These functions take a single point (t, x) as input
-    # rho = forward_fn
-    # log_rho = lambda t, x: jnp.maximum(jnp.log(forward_fn(t, x)), -100)
-    # nabla_log_rho = jax.jacrev(log_rho, argnums=1)
-    #
-    # # unpack the test data
-    # test_time_stamps = pde_instance.test_data[0]
-    #
-    # # side_x = jnp.linspace(mins[0], maxs[0], 256)
-    # # side_y = jnp.linspace(mins[1], maxs[1], 256)
-    # # X, Y = jnp.meshgrid(side_x, side_y)
-    # # grid_points_test = jnp.concatenate([X.reshape(-1, 1), Y.reshape(-1, 1)], axis=1)
-    # # grid_points_test = jnp.concatenate([grid_points_test, grid_points_test], axis=-1)
-    # distribution_0 = Uniform(mins, maxs)
-    # points_test = distribution_0.sample(256 * 256, rng)
-    #
-    # rho = jax.vmap(jax.vmap(rho, in_axes=[None, 0]), in_axes=[0, None])
-    # log_rho = jax.vmap(jax.vmap(log_rho, in_axes=[None, 0]), in_axes=[0, None])
-    # nabla_log_rho = jax.vmap(jax.vmap(nabla_log_rho, in_axes=[None, 0]), in_axes=[0, None])
-    #
-    # densities = rho(test_time_stamps[:, None], points_test)
-    # log_densities = log_rho(test_time_stamps[:, None], points_test)
-    # scores = jnp.squeeze(nabla_log_rho(test_time_stamps[:, None], points_test))
-    #
-    # scores_true, log_densities_true = pde_instance.ground_truth(points_test)
-    #
-    # densities = jnp.squeeze(densities)
-    # log_densities = jnp.squeeze(log_densities)
-    #
-    #
-    # KL = jnp.mean(densities * (log_densities - log_densities_true)) * domain_area
-    # L1 = jnp.mean(jnp.abs(densities - jnp.exp(log_densities_true))) * domain_area
-    # total_mass = jnp.mean(densities) * domain_area
-    # total_mass_true = jnp.mean(jnp.exp(log_densities_true)) * domain_area
-    #
-    # Fisher_information = jnp.mean(jnp.sum((scores - scores_true) ** 2, axis=-1))
-    #
-    # # print(f"KL {KL: .2f}, L1 {L1: .2f}, Fisher information {Fisher_information: .2f}")
-    # # print(f"Total mass {total_mass: .2f}, True total mass {total_mass_true: .2f}")
-    # return {"L1": L1, "KL": KL, "Fisher Information": Fisher_information, "total_mass": total_mass, "total_mass_true": total_mass_true}
-    # return {}
 
-
-def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
+def plot_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
     pass
-    # T = KineticFokkerPlanck.total_evolving_time
-    # t_part = config["t_part"]
-    # for t in range(t_part):
-    #     def f(x: jnp.ndarray):
-    #         batch_size_x = x.shape[0]
-    #         return forward_fn(jnp.ones((batch_size_x, 1)) * T / t_part * t, x)
-    #
-    #     plot_density_2d(f, config)
-
 
 class MLPEulerPoisson(nn.Module):
-    scaling: float = 1.
+    pde_instance: EulerPoissonWithDrift
+    # hidden_dims: List[int] 
+    # time_embedding_dim: int = 0
+    DEBUG: bool = False
+    
+
     def setup(self):
-        self.mu = MLP(output_dim=1)
-        self.u = MLP(output_dim=3)
-        self.nabla_phi = MLP(output_dim=3)
+        self.time_embedding_dim = self.pde_instance.cfg.neural_network.time_embedding_dim
+        self.hidden_dims = [self.pde_instance.cfg.neural_network.hidden_dim] * self.pde_instance.cfg.neural_network.layers
+        self.mu = MLP(output_dim=1, time_embedding_dim=self.time_embedding_dim, hidden_dims=self.hidden_dims)
+        self.u = MLP(output_dim=3, time_embedding_dim=self.time_embedding_dim, hidden_dims=self.hidden_dims)
+        self.nabla_phi = MLP(output_dim=3, time_embedding_dim=self.time_embedding_dim, hidden_dims=self.hidden_dims)
 
     def __call__(self, t: jnp.ndarray, x: jnp.ndarray, keys: List[str]):
         result = {}
         for key in keys:
             if key == "mu":
-                result[key] = self.mu(t, x) * self.scaling
+                result[key] = self.mu(t, x) if not self.DEBUG else self.pde_instance.mu_t(t, x)
             elif key == "u":
-                result[key] = self.u(t, x)
+                result[key] = self.u(t, x) if not self.DEBUG else self.pde_instance.u_t(t, x)
+                # result[key] = self.u(t, x)
             elif key == "nabla_phi":
+                # result[key] = self.nabla_phi(t, x) if not self.DEBUG else self.pde_instance.nabla_phi_t(t, x)
                 result[key] = self.nabla_phi(t, x)
             else:
                 raise Exception("(PINN) unknown key!")
         return result
 
-def create_model_fn(problem_instance: EulerPoisson):
 
-    net = MLPEulerPoisson()
+def create_model_fn(pde_instance: EulerPoissonWithDrift):
+    # net = MLPEulerPoisson(time_embedding_dim=pde_instance.cfg.neural_network.time_embedding_dim,
+                        #   hidden_dims=[pde_instance.cfg.neural_network.hidden_dim] * pde_instance.cfg.neural_network.layers)
+    net = MLPEulerPoisson(pde_instance=pde_instance, DEBUG=False)
 
-    params = net.init(random.PRNGKey(11), jnp.zeros(1),
-                      jnp.squeeze(problem_instance.distribution_0.sample(1, random.PRNGKey(1))), ["mu", "u", "nabla_phi"])
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))), ["mu", "u", "nabla_phi"])
 
-    # set the scaling of mu so that the total mass is of the right order.
-    mins = problem_instance.mins
-    maxs = problem_instance.maxs
-    domain_area = problem_instance.domain_area
-    rho = partial(net.apply, params)
-    rho = jax.vmap(rho, in_axes=[None, 0, None])
-    distribution_0 = Uniform(mins, maxs)
-    points_test = distribution_0.sample(256 * 256, random.PRNGKey(123))
-    densities = rho(jnp.zeros(1), points_test, ["mu"])["mu"]
-    total_mass = jnp.mean(densities) * domain_area
-
-    net.scaling = 1./ total_mass
-
-    print(
-        f"(PINN) Automatically set the scaling in mu to 1/{total_mass: .2e}."
-    )
+    print("Pretraining the hypothesis velocity field using the initial data to improve the performance.")
+    params = model_pretrain_fn(pde_instance=pde_instance, net=net, params=params)
+    print("Finished pretraining.")
 
     return net, params
+
+
+def model_pretrain_fn(pde_instance: EulerPoissonWithDrift, net, params):
+    # create an optimizer for pretrain
+    optimizer = optax.chain(optax.clip(1),
+                            optax.add_decayed_weights(1e-4),
+                            optax.sgd(learning_rate=1e-2, momentum=0.9)
+                            )
+    opt_state = optimizer.init(params)
+
+    pretrain_steps = 4096
+    # pretrain using the initial data
+    key_pretrains = random.split(random.PRNGKey(2199), pretrain_steps)
+
+
+    # create time stamps:
+    time_stampes = jnp.linspace(0, pde_instance.total_evolving_time, 128)
+    
+    def pretrain_loss_mu_fn(params, t, data):
+        mu_0_true = pde_instance.mu_0(data)
+        mu_t_predict = net.apply(params, t, data, ["mu"])["mu"]
+        return jnp.mean(jnp.sum((mu_t_predict - mu_0_true) ** 2, axis=-1))
+    
+    def pretrain_loss_u_fn(params, t, data):
+        u_0_true = pde_instance.u_0(data)
+        u_t_predict = net.apply(params, t, data, ["u"])["u"]
+        return jnp.mean(jnp.sum((u_t_predict - u_0_true) ** 2, axis=-1))
+
+    def pretrain_loss_nabla_phi_fn(params, t, data):
+        nabla_phi_0_true = pde_instance.nabla_phi_0(data)
+        nabla_phi_t_predict = net.apply(params, t, data, ["nabla_phi"])["nabla_phi"]
+        return jnp.mean(jnp.sum((nabla_phi_t_predict - nabla_phi_0_true) ** 2, axis=-1))
+    
+    pretrain_loss_mu_fn = jax.vmap(pretrain_loss_mu_fn, in_axes=[None, 0, None])
+    pretrain_loss_u_fn = jax.vmap(pretrain_loss_u_fn, in_axes=[None, 0, None])
+    pretrain_loss_nabla_phi_fn = jax.vmap(pretrain_loss_nabla_phi_fn, in_axes=[None, 0, None])
+
+
+    def loss_fn(params, t, data):
+        return jnp.mean(pretrain_loss_mu_fn(params, t, data) + pretrain_loss_u_fn(params, t, data) + pretrain_loss_mu_fn(params, t, data))
+    
+    grad_fn = jax.grad(loss_fn,)
+    
+    @jax.jit
+    def update_fn(key_pretrain, params, opt_state):
+        data_initial = pde_instance.distribution_domain.sample(256, key_pretrain)
+
+        grad = grad_fn(params, time_stampes, data_initial)
+
+        updates, opt_state = optimizer.update(grad, opt_state, params)
+        params = optax.apply_updates(params, updates)
+
+        return params, opt_state
+
+
+    for key_pretrain in key_pretrains:
+        params, opt_state = update_fn(key_pretrain, params, opt_state)
+        
+
+    return params
 
 # def create_model_fn(log_prob_0):
 #     param_dict = {
