@@ -90,7 +90,7 @@ class EulerPoisson(ProblemInstance):
         self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
         self.domain_area = (cfg.pde_instance.domain_max - cfg.pde_instance.domain_min) ** effective_domain_dim
 
-
+        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
         self.drift_term = self.get_drift_term()

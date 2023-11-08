@@ -16,7 +16,14 @@ def get_optimizer(optimizer_cfg: DictConfig):
         else:
             raise NotImplementedError
 
-        optimizer = optax.chain(optax.clip(optimizer_cfg.grad_clipping.threshold),
+        if optimizer_cfg.grad_clipping.type=="adaptive":
+            clip = optax.adaptive_grad_clip
+        elif optimizer_cfg.grad_clipping.type=="non-adaptive":
+            clip = optax.clip
+        else:
+            raise ValueError("type of clipping should be either adaptive or non-adaptive!")
+        
+        optimizer = optax.chain(clip(optimizer_cfg.grad_clipping.threshold),
                                 optax.add_decayed_weights(optimizer_cfg.weight_decay),
                                 optax.sgd(learning_rate=lr_schedule, momentum=optimizer_cfg.momentum)
                                 )

@@ -138,7 +138,7 @@ class MLPEulerPoisson(nn.Module):
 def create_model_fn(pde_instance: EulerPoissonWithDrift):
     # net = MLPEulerPoisson(time_embedding_dim=pde_instance.cfg.neural_network.time_embedding_dim,
                         #   hidden_dims=[pde_instance.cfg.neural_network.hidden_dim] * pde_instance.cfg.neural_network.layers)
-    net = MLPEulerPoisson(pde_instance=pde_instance, DEBUG=False)
+    net = MLPEulerPoisson(pde_instance=pde_instance, DEBUG=True)
 
     params = net.init(random.PRNGKey(11), jnp.zeros(1), jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))), ["mu", "u", "nabla_phi"])
 

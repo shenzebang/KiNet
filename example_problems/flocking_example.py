@@ -7,16 +7,6 @@ from jax.experimental.ode import odeint
 import gc
 import warnings
 
-Sigma_x_0 = jnp.eye(3)
-mu_x_0 = - jnp.zeros(3)
-distribution_x_0 = Gaussian(mu_x_0, Sigma_x_0)
-
-Sigma_v_0 = jnp.eye(3) * 2
-# mu_v_0 = jnp.array([0., 0., 0.])
-mu_v_0 = jnp.zeros(3)
-distribution_v_0 = Gaussian(mu_v_0, Sigma_v_0)
-# =============================================
-
 # =============================================
 # Flocking Kernel in 3D!
 beta = .2
@@ -43,23 +33,27 @@ def drift_term(t: jnp.ndarray, x: jnp.ndarray):
 class Flocking(ProblemInstance):
     def __init__(self, cfg, rng):
         super().__init__(cfg, rng)
+
+        self.drift_term = drift_term
+        self.dim = 3
+
+        Sigma_x_0 = jnp.eye(3)
+        mu_x_0 = jnp.zeros(3)
+        distribution_x_0 = Gaussian(mu_x_0, Sigma_x_0)
+
+        Sigma_v_0 = jnp.eye(3) * 2
+        mu_v_0 = jnp.zeros(3)
+        distribution_v_0 = Gaussian(mu_v_0, Sigma_v_0)
+
+        # Distributions for KiNet
         self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
-        self.drift_term = self.get_drift_term()
-        # domain of interest (2d dimensional box)
-        # effective_domain_dim = args.domain_dim * 2  # (2d for position and velocity)
-        # self.mins = args.domain_min * jnp.ones(effective_domain_dim)
-        # self.maxs = args.domain_max * jnp.ones(effective_domain_dim)
-        # self.domain_area = (args.domain_max - args.domain_min) ** effective_domain_dim
+        
+        # Distributions for PINN
 
-        # self.distribution_domain = Uniform(self.mins, self.maxs)
-
+        # Test data
         self.test_data = self.prepare_test_data()
 
         # self.run_particle_method_baseline()
-
-
-    def get_drift_term(self):
-        return drift_term
 
     def prepare_test_data(self):
         # use particle method to generate the test dataset
@@ -68,12 +62,6 @@ class Flocking(ProblemInstance):
         if jax.devices()[0].platform == "gpu":
             z_test = jax.device_put(z_test, jax.devices("gpu")[-1])
         # 2. evolve the system to t = self.total_evolving_time
-        # def velocity(z: jnp.ndarray):
-        #     x, v = jnp.split(z, indices_or_sections=2, axis=-1)
-        #     dx = v
-        #     dv = conv_fn_vmap(z, z)
-        #     dz = jnp.concatenate([dx, dv], axis=-1)
-        #     return dz
 
         forward_fn = lambda t, z: conv_fn_vmap(z, z)
         velocity = self.forward_fn_to_dynamics(forward_fn)
@@ -102,16 +90,7 @@ class Flocking(ProblemInstance):
         forward_fn = lambda t, z: conv_fn_vmap(z, z)
         velocity = self.forward_fn_to_dynamics(forward_fn)
 
-        # def velocity(z: jnp.ndarray):
-        #     x, v = jnp.split(z, indices_or_sections=2, axis=-1)
-        #     dx = v
-        #     dv = conv_fn_vmap(z, z)
-        #     dz = jnp.concatenate([dx, dv], axis=-1)
-        #     return dz
-
-        states_0 = {
-            "z": z_particle,
-        }
+        states_0 = {"z": z_particle,}
 
         def ode_func1(states, t):
             return {"z": velocity(t, states["z"])}
@@ -149,6 +128,3 @@ class Flocking(ProblemInstance):
             return dz
 
         return dynamics
-
-
-

@@ -6,12 +6,6 @@ from api import ProblemInstance
 from utils.common_utils import v_gaussian_score, v_gaussian_log_density
 from core.potential import QuadraticPotential
 
-# beta = 1.  # friction coefficient
-#
-# Gamma = jnp.sqrt(4 * beta)
-
-# G = jnp.array([[0., 0.], [0., jnp.sqrt(2 * Gamma * beta)]])
-
 def Gaussian_Sigma_mu_kinetic_close_form(t, configuration, beta, Gamma):
     domain_dim = configuration["mu_x_0"].shape[0]
     Bt = beta * t
@@ -65,11 +59,6 @@ def eval_Gaussian_Sigma_mu_kinetic(configuration, time_stamps, beta, Gamma, tole
     return mus_closed_form, Sigmas_closed_form
 
 
-# test_time_stamps = jnp.linspace(0, T, num=11)
-#
-# mus, Sigmas = eval_Gaussian_Sigma_mu_kinetic(Sigma_x_0, mu_x_0, Sigma_v_0, mu_v_0, test_time_stamps)
-#
-# test_data = (test_time_stamps, mus, Sigmas)
 def initialize_configuration(domain_dim: int, beta):
     Sigma_x_0_scale = 1.
     Sigma_v_0_scale = 1.
@@ -105,17 +94,19 @@ class KineticFokkerPlanck(ProblemInstance):
     def __init__(self, cfg, rng):
         super().__init__(cfg, rng)
 
+        # Configurations that lead to an analytical solution
         # To ensure that dx = v dt, we have Gamma == jnp.sqrt(4 * beta) and Gamma * beta == diffusion_coefficient
         self.beta = (self.diffusion_coefficient / 2) ** (2 / 3)
         self.Gamma = 2 * jnp.sqrt(self.beta)
-
-
         self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta)
-        self.distribution_0 = get_distribution_0(self.initial_configuration)
         self.target_potential = get_potential(self.initial_configuration)
-        self.test_data = prepare_test_data(self.initial_configuration, self.total_evolving_time, self.beta, self.Gamma)
 
-        # domain of interest (2d dimensional box)
+        # Analytical solution
+
+        # Distributions for KiNet
+        self.distribution_0 = get_distribution_0(self.initial_configuration)
+
+        # Distributions for PINN
         effective_domain_dim = cfg.pde_instance.domain_dim * 2  # (2d for position and velocity)
         self.mins = cfg.pde_instance.domain_min * jnp.ones(effective_domain_dim)
         self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
@@ -123,6 +114,8 @@ class KineticFokkerPlanck(ProblemInstance):
 
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
+        # Test data
+        self.test_data = prepare_test_data(self.initial_configuration, self.total_evolving_time, self.beta, self.Gamma)
 
     def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
         # TODO: revise the implementation of the ground truth fn for FPE to accept any testing time.

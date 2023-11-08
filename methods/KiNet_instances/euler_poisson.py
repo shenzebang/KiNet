@@ -5,12 +5,12 @@ import jax.numpy as jnp
 from utils.common_utils import divergence_fn, compute_pytree_norm
 from jax.experimental.ode import odeint
 from utils.plot_utils import plot_velocity
-from example_problems.euler_poisson_example import EulerPoisson, conv_fn_vmap
+from example_problems.euler_poisson_with_drift import EulerPoissonWithDrift, conv_fn_vmap
 from core.model import get_model
 import jax.random as random
 
 
-def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoisson):
+def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoissonWithDrift):
     # unpack the parameters
     T = pde_instance.total_evolving_time
     # unpack the data
@@ -131,7 +131,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
     }
 
 
-def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
+def plot_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
     def hypothesis_velocity_field_fn(_z, _t):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
@@ -155,7 +155,7 @@ def plot_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
     plot_velocity(z_0T)
 
 
-def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
+def test_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
     x_ground_truth = pde_instance.test_data["x_T"]
     test_time_stamps = jnp.linspace(0, pde_instance.total_evolving_time, 11)
     forward_fn_vmapt = jax.vmap(forward_fn, in_axes=[0, None])
@@ -166,12 +166,12 @@ def test_fn(forward_fn, config, pde_instance: EulerPoisson, rng):
     return {"relative l2 error (average over time)": jnp.mean(relative_l2), "relative l2 error (maximum over time)": jnp.max(relative_l2)}
 
 
-def create_model_fn(pde_instance: EulerPoisson):
+def create_model_fn(pde_instance: EulerPoissonWithDrift):
     net = get_model(pde_instance.cfg, DEBUG=False)
     # net = KiNet(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug_2(output_dim=3, time_embedding_dim=0)
     # net = KiNet_ResNet(output_dim=3, time_embedding_dim=16, n_resblocks=3)
-    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_x_0.sample(1, random.PRNGKey(1)))
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
     return net, params
 

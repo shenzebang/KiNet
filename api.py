@@ -12,22 +12,24 @@ from jax.experimental.ode import odeint
 from core.distribution import Uniform
 
 class ProblemInstance:
-    distribution_0: Distribution # initial distribution
-    distribution_domain: Distribution # distribution over the domain for evaluating l2 norm in PINN
-    total_evolving_time: jnp.ndarray = 1.
-    diffusion_coefficient: jnp.ndarray = 0.
-    mins: jnp.ndarray
-    maxs: jnp.ndarray
-    instance_name: str
-    dim: int
-
     def __init__(self, cfg, rng):
         self.cfg = cfg
         self.instance_name = f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"
         self.dim = cfg.pde_instance.domain_dim
         self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
-        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
+        
+        # The following instance attributes should be implemented
+        
+        # Configurations that lead to an analytical solution
+        
+        # Analytical solution
+
+        # Distributions for KiNet
+
+        # Distributions for PINN
+
+        # Test data
 
     def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
         # Should return the test time stamp and the corresponding ground truth
@@ -36,12 +38,11 @@ class ProblemInstance:
     def forward_fn_to_dynamics(self, forward_fn):
         raise NotImplementedError
 
-@dataclass
 class Method:
-    # model: nn.Module
-    pde_instance: ProblemInstance
-    cfg: DictConfig
-    rng: KeyArray
+    def __init__(self, pde_instance: ProblemInstance, cfg: DictConfig, rng: KeyArray) -> None:
+        self.pde_instance = pde_instance
+        self.cfg = cfg
+        self.rng = rng
 
     def value_and_grad_fn(self, forward_fn, params, rng):
         # the data generating process should be handled within this function

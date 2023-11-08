@@ -1,7 +1,39 @@
-from example_problems.euler_poisson_example import EulerPoisson, t_0, threshold_0
+from api import ProblemInstance
+from core.distribution import Uniform, Uniform_over_3d_Ball
 import jax.numpy as jnp
 import jax
 import jax.random as random
+
+# =============================================
+# Coulomb Kernel in 3D!
+def K_fn(x: jnp.ndarray, y: jnp.ndarray):
+    dx = x - y
+    norm2 = jnp.sum(dx ** 2, axis=-1)
+    norm = jnp.sqrt(norm2)
+    # norm = jnp.maximum(jnp.sqrt(norm2), 1e-4)
+    conditions = [
+        norm <= 1e-2,
+        norm >  1e-2
+    ]
+    functions = [
+        jnp.inf,
+        norm,
+    ]
+    norm_clipped = jnp.piecewise(norm, conditions, functions)
+    return dx / norm_clipped ** 3 / 4 / jnp.pi
+
+K_fn_vmapy = jax.vmap(K_fn, in_axes=[None, 0])
+
+def conv_fn(x: jnp.ndarray, y: jnp.ndarray):
+    K = K_fn_vmapy(x, y)
+    return jnp.mean(K, axis=0)
+
+conv_fn_vmap = jax.vmap(conv_fn, in_axes=[0, None])
+# =============================================
+
+t_0 = 1
+
+threshold_0 = (3/4/jnp.pi * t_0) ** (1/3)
 
 def coulomb_potential_uniform_fn(t: jnp.ndarray, xi: jnp.ndarray):
     xi_norm_2 = jnp.sum(xi ** 2)
@@ -40,43 +72,43 @@ def ground_truth_op_uniform(t: jnp.ndarray, x: jnp.ndarray):
 ground_truth_op_vmapx = jax.vmap(ground_truth_op_uniform, in_axes=[None, 0])
 ground_truth_op_vmapx_vmapt = jax.vmap(ground_truth_op_vmapx, in_axes=[0, None])
 
-def nabla_phi_0(x: jnp.ndarray):
-    if x.shape[-1] != 3:
-        raise ValueError("x should be of shape [3] or [N, 3]")
-    if x.ndim == 1:
-        return -ground_truth_op_uniform(jnp.zeros([]), x)
-    elif x.ndim == 2: # batched
-        return -ground_truth_op_vmapx(jnp.zeros([]), x)
-    else:
-        raise NotImplementedError
+# def nabla_phi_0(x: jnp.ndarray):
+#     if x.shape[-1] != 3:
+#         raise ValueError("x should be of shape [3] or [N, 3]")
+#     if x.ndim == 1:
+#         return -ground_truth_op_uniform(jnp.zeros([]), x)
+#     elif x.ndim == 2: # batched
+#         return -ground_truth_op_vmapx(jnp.zeros([]), x)
+#     else:
+#         raise NotImplementedError
     
-def _mu_0(x: jnp.ndarray):
-    norm = jnp.sqrt(jnp.sum(x ** 2, axis=-1))
-    conditions = [
-        norm <= threshold_0,
-        norm >  threshold_0
-    ]
-    functions = [
-        jnp.ones([]),
-        jnp.zeros([]),
-    ]
-    value = jnp.piecewise(norm, conditions, functions)
-    return value / t_0
+# def _mu_0(x: jnp.ndarray):
+#     norm = jnp.sqrt(jnp.sum(x ** 2, axis=-1))
+#     conditions = [
+#         norm <= threshold_0,
+#         norm >  threshold_0
+#     ]
+#     functions = [
+#         jnp.ones([]),
+#         jnp.zeros([]),
+#     ]
+#     value = jnp.piecewise(norm, conditions, functions)
+#     return value / t_0
 
-_mu_0_vmapx = jax.vmap(_mu_0, in_axes=[0])
+# _mu_0_vmapx = jax.vmap(_mu_0, in_axes=[0])
 
-def mu_0(x: jnp.ndarray):
-    if x.shape[-1] != 3:
-        raise ValueError("x should be of shape [3] or [N, 3]")
-    if x.ndim == 1:
-        return _mu_0(x)
-    elif x.ndim == 2: # batched
-        return _mu_0_vmapx(x)
-    else:
-        raise NotImplementedError
+# def mu_0(x: jnp.ndarray):
+#     if x.shape[-1] != 3:
+#         raise ValueError("x should be of shape [3] or [N, 3]")
+#     if x.ndim == 1:
+#         return _mu_0(x)
+#     elif x.ndim == 2: # batched
+#         return _mu_0_vmapx(x)
+#     else:
+#         raise NotImplementedError
         
-def u_0(x: jnp.ndarray):
-    return x / 3 / t_0
+# def u_0(x: jnp.ndarray):
+#     return x / 3 / t_0
 
 def u_t(t: jnp.ndarray, x: jnp.ndarray):
     return x / 3 / (t_0 + t)
@@ -106,19 +138,37 @@ def nabla_phi_t(t: jnp.ndarray, x: jnp.ndarray):
     else:
         raise NotImplementedError
 
-class EulerPoissonWithDrift(EulerPoisson):
+class EulerPoissonWithDrift(ProblemInstance):
     def __init__(self, cfg, rng):
         super(EulerPoissonWithDrift, self).__init__(cfg, rng)
-        self.u_0 = u_0
-        self.mu_0 = mu_0
-        self.nabla_phi_0 = nabla_phi_0
+        
+        # Configurations that lead to an analytical solution
+        self.drift_term = drift_term
+        distribution_x_0 = Uniform_over_3d_Ball(threshold_0)
+
+        # Analytical solution
+        self.u_0 = lambda x: u_t(jnp.zeros([]), x)
+        self.mu_0 = lambda x: mu_t(jnp.zeros([]), x)
+        self.nabla_phi_0 = lambda x: nabla_phi_t(jnp.zeros([]), x)
 
         self.u_t = u_t
         self.mu_t = mu_t
         self.nabla_phi_t = nabla_phi_t
 
-    def get_drift_term(self):
-        return drift_term
+        # Distributions for KiNet
+        self.distribution_0 = distribution_x_0
+
+        # Distributions for PINN
+        effective_domain_dim = cfg.pde_instance.domain_dim # (d for position)
+        self.mins = cfg.pde_instance.domain_min * jnp.ones(effective_domain_dim)
+        self.maxs = cfg.pde_instance.domain_max * jnp.ones(effective_domain_dim)
+        self.domain_area = (cfg.pde_instance.domain_max - cfg.pde_instance.domain_min) ** effective_domain_dim
+
+        self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
+        self.distribution_domain = Uniform(self.mins, self.maxs)
+
+        # Test data
+        self.test_data = self.prepare_test_data()
 
     def prepare_test_data(self):
         print(f"Using the instance {self.instance_name}. Will use the close-form solution to test accuracy.")
