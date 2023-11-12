@@ -207,16 +207,3 @@ def model_pretrain_fn(pde_instance: EulerPoissonWithDrift, net, params):
         
 
     return params
-
-# def create_model_fn(log_prob_0):
-#     param_dict = {
-#         'dim': 4,
-#         'embed_time_dim': 0,
-#         'couple_mul': 2,
-#         'mask_type': 'loop',
-#         'activation_layer': 'celu',
-#         'soft_init': 0.,
-#         'ignore_time': False,
-#     }
-#     mnf = MNF(**param_dict)
-#     return RealNVP(mnf, log_prob_0)

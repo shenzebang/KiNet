@@ -48,6 +48,9 @@ class DistributionKinetic(Distribution):
         logdensity_v = self.distribution_v.logdensity(v)
         logdensity_z = logdensity_x + logdensity_v
         return logdensity_z
+    
+    def density(self, z: jnp.ndarray):
+        return jnp.exp(self.logdensity(z))
 
 class Gaussian(Distribution):
     def __init__(self, mu: jnp.ndarray, cov: jnp.ndarray):
@@ -58,7 +61,8 @@ class Gaussian(Distribution):
         self.cov = cov
         U, S, _ = jnp.linalg.svd(cov)
         self.inv_cov = jnp.linalg.inv(self.cov)
-        self.log_det = jnp.log(jnp.linalg.det(self.cov * 2 * jnp.pi))
+        self.det = jnp.linalg.det(self.cov * 2 * jnp.pi)
+        self.log_det = jnp.log(self.det)
         self.cov_half = U @ jnp.diag(jnp.sqrt(S)) @ jnp.transpose(U)
 
     def sample(self, batch_size: int, key):

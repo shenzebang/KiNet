@@ -52,6 +52,14 @@ def _gaussian_log_density(x, cov, mu):
 
 v_gaussian_log_density = jax.vmap(_gaussian_log_density, in_axes=[0, None, None])
 
+def gaussian_log_density(x, cov, mu):
+    if x.ndim == 2:
+        return v_gaussian_log_density(x, cov, mu)
+    elif x.ndim == 1:
+        return _gaussian_log_density(x, cov, mu)
+    else:
+        raise ValueError("x should be a either 1D or 2D array")
+
 v_matmul = jax.vmap(jnp.matmul, in_axes=(None, 0))
 
 

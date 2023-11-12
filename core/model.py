@@ -5,7 +5,7 @@ from typing import Tuple
 from core.normalizing_flow import TimeEmbedding, ActivationFactory, ActivationModule
 from example_problems.euler_poisson_with_drift import ground_truth_op_vmapx, ground_truth_op_uniform
 # For Debugging KFP
-from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck, Gaussian_Sigma_mu_kinetic_close_form
+from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck, Kinetic_OU_process
 from utils.common_utils import v_gaussian_score, v_gaussian_log_density
 class MLP(nn.Module):
     output_dim: int = 1
@@ -265,7 +265,7 @@ class DEBUG_KFP(nn.Module):
         self.layers = nn.Dense(1)
 
     def __call__(self, t: jnp.ndarray, x: jnp.ndarray):
-        mu_t, Sigma_t = Gaussian_Sigma_mu_kinetic_close_form(
+        mu_t, Sigma_t = Kinetic_OU_process(
                             t,
                             self.pde_instance.initial_configuration,
                             self.pde_instance.beta,

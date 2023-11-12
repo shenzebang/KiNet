@@ -1,1 +1,1 @@
-python main.py --PDE 2D-Kinetic-Fokker-Planck --method PINN --boundary_condition None --domain_dim 2 --number_of_iterations 400000 --learning_rate 1e-3 --batch_size_initial 2000 --batch_size 200 --domain_min -5 --domain_max 5 --total_evolving_time 1
+CUDA_VISIBLE_DEVICES=0 python main.py pde_instance=nd_fokker_planck pde_instance.domain_dim=1 solver=PINN pde_instance.domain_min=-5 pde_instance.domain_max=5 train.number_of_iterations=800000 neural_network.hidden_dim=128 neural_network.layers=3 train.optimizer.grad_clipping.type=non-adaptive
