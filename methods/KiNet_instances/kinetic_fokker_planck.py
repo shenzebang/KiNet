@@ -256,7 +256,7 @@ def create_model_fn(pde_instance: KineticFokkerPlanck):
 def velocity_field_pretraining(pde_instance: KineticFokkerPlanck, net, params):
     # create an optimizer for pretrain
     optimizer = optax.chain(optax.adaptive_grad_clip(1),
-                                    optax.add_decayed_weights(1e-3),
+                                    optax.add_decayed_weights(1e-2),
                                     optax.sgd(learning_rate=1e-2, momentum=0.9)
                                     )
     opt_state = optimizer.init(params)
@@ -280,17 +280,20 @@ def velocity_field_pretraining(pde_instance: KineticFokkerPlanck, net, params):
         return jnp.mean(pretrain_loss_fn(params, t, data))
     
     grad_fn = jax.grad(loss_fn,)
-    grad_fn = jax.jit(grad_fn)
 
-    for key_pretrain in key_pretrains:
+    def update_fn(rng, params, opt_state):
         # sample from initial distribution
         data_initial = pde_instance.distribution_0.sample(256, key_pretrain)
-        
         grad = grad_fn(params, time_stampes, data_initial)
-
         updates, opt_state = optimizer.update(grad, opt_state, params)
         params = optax.apply_updates(params, updates)
+        return params, opt_state
+    
+    update_fn = jax.jit(update_fn)
 
+    for key_pretrain in key_pretrains:
+        params, opt_state = update_fn(key_pretrain, params, opt_state)
+        
     return params
 
         

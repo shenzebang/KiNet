@@ -1,3 +1,4 @@
 outputs/
 multirun/
 __pycache__/
+local_test_*.py
