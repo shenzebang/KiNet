@@ -57,7 +57,10 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
             u_laplacian_v = jnp.sum(jacobian_diag_v)
             return u_t + u_v_dot_acceleration + u_x_dot_v + u_dot_div_v_acceleration - u_laplacian_v * diffusion_coefficient
 
-        fokker_planck_eq = jax.vmap(jax.vmap(fokker_planck_eq, in_axes=(None, 0)), in_axes=(0, None))
+        if pde_instance.cfg.neural_network.name == "RealNVP":
+            fokker_planck_eq = jax.vmap(fokker_planck_eq, in_axes=(0, 0))
+        else:
+            fokker_planck_eq = jax.vmap(jax.vmap(fokker_planck_eq, in_axes=(None, 0)), in_axes=(0, None))
 
         def mass_change_fn(t, z):
             u_t = jacrev(forward_fn, argnums=1, )(_params, t, z)[0]
@@ -73,7 +76,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
         forward_fn_vmapx = jax.vmap(forward_fn, in_axes=(None, None, 0))
         u_pred_initial = forward_fn_vmapx(_params, jnp.zeros([]), z_initial)
         f_pred_train = fokker_planck_eq(time_train, space_train)
-        mass_change_total = mass_change_t_fn_vmap_t(time_train, space_train)
+        # mass_change_total = mass_change_t_fn_vmap_t(time_train, space_train)
         
         # loss_u_initial = jnp.mean((u_pred_initial - pde_instance.u_0(z_initial)) ** 2)
         # loss_f_train = jnp.mean((f_pred_train) ** 2)
@@ -81,12 +84,12 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
 
         loss_u_initial = jnp.mean(jnp.abs(u_pred_initial - pde_instance.u_0(z_initial)) ** 1.1)
         loss_f_train = jnp.mean(jnp.abs(f_pred_train) ** 1.1)
-        loss_mass_change = jnp.mean(jnp.abs(mass_change_total) ** 1.1)
+        # loss_mass_change = jnp.mean(jnp.abs(mass_change_total) ** 1.1)
 
         # return loss_u_boundary * weights["weight_boundary"] + loss_u_initial * weights["weight_initial"] + loss_f_train * weights["weight_train"]
-
+        loss = loss_u_initial * weights["weight_initial"] + loss_f_train * weights["weight_train"]
         # return loss_u_initial * weights["weight_initial"] + loss_f_train * weights["weight_train"] + loss_mass_change * weights["mass_change"]
-        return loss_u_initial * 10 + loss_f_train * weights["weight_train"]
+        return loss * pde_instance.domain_area
         # return loss_u_initial * weights["weight_initial"] + loss_f_train * weights["weight_train"], {"loss initial": loss_u_initial, "loss train": loss_f_train}
         # return loss_f_train * weights["weight_train"]
     
@@ -113,24 +116,43 @@ def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
     # grid_points_test = jnp.concatenate([X.reshape(-1, 1), Y.reshape(-1, 1)], axis=1)
     # grid_points_test = jnp.concatenate([grid_points_test, grid_points_test], axis=-1)
     # distribution_0 = Uniform(mins, maxs)
-    points_test = pde_instance.distribution_domain.sample(256 * 256, rng)
+    points_test = pde_instance.distribution_domain.sample(pde_instance.cfg.test.batch_size, rng)
 
+    
+    # rho = jax.vmap(rho, in_axes=[None, 0])
+    # log_rho = jax.vmap(log_rho, in_axes=[None, 0])
+    # nabla_log_rho = jax.vmap(nabla_log_rho, in_axes=[None, 0])
+
+    # densities = []
+    # log_densities = []
+    # scores = []
+    # for i in range(len(test_time_stamps)):
+    #     densities.append(rho(test_time_stamps[i], points_test))
+    #     log_densities.append(log_rho(test_time_stamps[i], points_test))
+    #     scores.append(nabla_log_rho(test_time_stamps[i], points_test))
+
+    # densities = jnp.stack(densities, axis=0)
+    # log_densities = jnp.stack(log_densities, axis=0)
+    # scores = jnp.stack(scores, axis=0)
+    
     rho = jax.vmap(jax.vmap(rho, in_axes=[None, 0]), in_axes=[0, None])
-    log_rho = jax.vmap(jax.vmap(log_rho, in_axes=[None, 0]), in_axes=[0, None])
+    # log_rho = jax.vmap(jax.vmap(log_rho, in_axes=[None, 0]), in_axes=[0, None])
     nabla_log_rho = jax.vmap(jax.vmap(nabla_log_rho, in_axes=[None, 0]), in_axes=[0, None])
 
-    densities = jnp.maximum(rho(test_time_stamps, points_test), 0.)
-    log_densities = log_rho(test_time_stamps, points_test)
+    densities = jnp.maximum(rho(test_time_stamps, points_test), 1e-20)
+    log_densities = jnp.log(densities)
+    # log_densities = log_rho(test_time_stamps, points_test)
     scores = nabla_log_rho(test_time_stamps, points_test)
 
     scores_true, log_densities_true = pde_instance.ground_truth(test_time_stamps, points_test)
+    
 
     KL = jnp.mean(densities * (log_densities - log_densities_true)) * domain_area
     L1 = jnp.mean(jnp.abs(densities - jnp.exp(log_densities_true))) * domain_area
     total_mass = jnp.mean(densities) * domain_area
     total_mass_true = jnp.mean(jnp.exp(log_densities_true)) * domain_area
 
-    Fisher_information = jnp.mean(jnp.sum((scores - scores_true) ** 2, axis=-1))
+    Fisher_information = jnp.mean(densities * jnp.sum((scores - scores_true) ** 2, axis=-1)) * domain_area
 
     # print(f"KL {KL: .2f}, L1 {L1: .2f}, Fisher information {Fisher_information: .2f}")
     # print(f"Total mass {total_mass: .2f}, True total mass {total_mass_true: .2f}")
@@ -200,7 +222,7 @@ def create_model_fn(pde_instance: KineticFokkerPlanck):
 def model_pretrain_fn(pde_instance: KineticFokkerPlanck, net, params):
     # create an optimizer for pretrain
     optimizer = optax.chain(optax.clip(1),
-                            optax.add_decayed_weights(1e-4),
+                            optax.add_decayed_weights(1e-3),
                             optax.sgd(learning_rate=1e-2, momentum=0.9)
                             )
     opt_state = optimizer.init(params)
@@ -222,7 +244,7 @@ def model_pretrain_fn(pde_instance: KineticFokkerPlanck, net, params):
     pretrain_loss_u_fn = jax.vmap(pretrain_loss_u_fn, in_axes=[None, 0, None])
 
     def loss_fn(params, t, data):
-        return jnp.mean(pretrain_loss_u_fn(params, t, data))
+        return jnp.mean(pretrain_loss_u_fn(params, t, data)) * pde_instance.domain_area
     
     grad_fn = jax.grad(loss_fn,)
     

@@ -70,8 +70,11 @@ class PINN(Method):
         data_0 = self.pde_instance.distribution_domain.sample(self.cfg.solver.train.batch_size_initial, rng_initial)
         # density_0 = jnp.exp(self.pde_instance.distribution_0.logdensity(data_0))
 
-
-        time_train = self.pde_instance.distribution_t.sample(10, rng_train_t)
+        if self.cfg.neural_network.name == "RealNVP":
+            time_train = self.pde_instance.distribution_t.sample(self.cfg.solver.train.batch_size, rng_train_t)
+        else:
+            time_train = self.pde_instance.distribution_t.sample(10, rng_train_t)
+            
         data_train = self.pde_instance.distribution_domain.sample(self.cfg.solver.train.batch_size, rng_train_domain)
         data = {
             "data_initial": data_0,
