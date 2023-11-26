@@ -53,9 +53,21 @@ class JaxTrainer:
             params = optax.apply_updates(params, updates)
             return params, opt_state
 
-        @jax.jit
-        def test(params, rng):
-            return self.method.test_fn(self.forward_fn, params, rng)
+        # @jax.jit
+        if self.cfg.backend.use_pmap_test and jax.local_device_count() > 1:
+            def _test(params, rng):
+                return self.method.test_fn(self.forward_fn, params, rng)
+            
+            _test_fn = jax.pmap(_test, in_axes=(None, 0))
+
+            def test(params, rng):
+                rngs = random.split(rng, jax.local_device_count())
+                test_results = _test_fn(params, rngs)
+                test_results = jax.tree_map(lambda _g: jnp.mean(_g, axis=0), test_results)
+                return test_results
+        else:
+            def test(params, rng):
+                return self.method.test_fn(self.forward_fn, params, rng)
 
         # @jax.jit
         def plot(params, rng):
