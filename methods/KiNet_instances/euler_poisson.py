@@ -8,6 +8,7 @@ from utils.plot_utils import plot_velocity
 from example_problems.euler_poisson_with_drift import EulerPoissonWithDrift, conv_fn_vmap
 from core.model import get_model
 import jax.random as random
+import optax
 
 
 def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoissonWithDrift):
@@ -173,5 +174,47 @@ def create_model_fn(pde_instance: EulerPoissonWithDrift):
     # net = KiNet_Debug_2(output_dim=3, time_embedding_dim=0)
     # net = KiNet_ResNet(output_dim=3, time_embedding_dim=16, n_resblocks=3)
     params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
+    params = velocity_field_pretraining(pde_instance, net, params)
     return net, params
 
+def velocity_field_pretraining(pde_instance: EulerPoissonWithDrift, net, params):
+    # create an optimizer for pretrain
+    optimizer = optax.chain(optax.adaptive_grad_clip(1),
+                                    optax.add_decayed_weights(1e-3),
+                                    optax.sgd(learning_rate=1e-2, momentum=0.9)
+                                    )
+    opt_state = optimizer.init(params)
+
+    pretrain_steps = 4096
+    # pretrain using the initial data
+    key_pretrains = random.split(random.PRNGKey(2199), pretrain_steps)
+
+
+    # create time stamps:
+    time_stampes = jnp.linspace(0, pde_instance.total_evolving_time, 128)
+    
+    def pretrain_loss_fn(params, t, data):
+        conv_true_0 = pde_instance.ground_truth(jnp.zeros([]), data)
+        return jnp.mean(jnp.sum((net.apply(params, t, data) - conv_true_0) ** 2, axis=-1))
+    
+    pretrain_loss_fn = jax.vmap(pretrain_loss_fn, in_axes=[None, 0, None])
+
+    def loss_fn(params, t, data):
+        return jnp.mean(pretrain_loss_fn(params, t, data))
+    
+    grad_fn = jax.grad(loss_fn,)
+
+    def update_fn(rng, params, opt_state):
+        # sample from initial distribution
+        data_initial = pde_instance.distribution_0.sample(256, key_pretrain)
+        grad = grad_fn(params, time_stampes, data_initial)
+        updates, opt_state = optimizer.update(grad, opt_state, params)
+        params = optax.apply_updates(params, updates)
+        return params, opt_state
+    
+    update_fn = jax.jit(update_fn)
+
+    for key_pretrain in key_pretrains:
+        params, opt_state = update_fn(key_pretrain, params, opt_state)
+        
+    return params
