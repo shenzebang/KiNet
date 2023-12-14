@@ -1,6 +1,7 @@
 import methods.KiNet_instances.kinetic_fokker_planck as kinetic_fokker_planck
 import methods.KiNet_instances.euler_poisson as euler_poisson
 import methods.KiNet_instances.flocking as flocking
+import methods.KiNet_instances.hlandau as hlandau
 from api import Method
 from functools import partial
 import jax.random as random
@@ -16,6 +17,8 @@ class KiNet(Method):
     def create_model_fn(self):
         if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
             return kinetic_fokker_planck.create_model_fn(self.pde_instance)
+        elif "Landau" in self.pde_instance.instance_name:
+            return hlandau.create_model_fn(self.pde_instance)
         else:
             return INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
         # net, params = INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
@@ -28,6 +31,9 @@ class KiNet(Method):
         config_test = {}
         if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
             return kinetic_fokker_planck.test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
+                                                rng=rng)
+        elif "Landau" in self.pde_instance.instance_name:
+            return hlandau.test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
                                                 rng=rng)
         else:
             return INSTANCES[self.pde_instance.instance_name].test_fn(forward_fn=forward_fn, config=config_test, pde_instance=self.pde_instance,
@@ -43,6 +49,9 @@ class KiNet(Method):
         }
         if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
             return kinetic_fokker_planck.value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
+                                                          config=config_train, pde_instance=self.pde_instance)
+        elif "Landau" in self.pde_instance.instance_name:
+            return hlandau.value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,
                                                           config=config_train, pde_instance=self.pde_instance)
         else:
             return INSTANCES[self.pde_instance.instance_name].value_and_grad_fn(forward_fn=forward_fn, params=params, data=data, rng=rng_vg,

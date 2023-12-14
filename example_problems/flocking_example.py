@@ -59,8 +59,8 @@ class Flocking(ProblemInstance):
         # use particle method to generate the test dataset
         # 1. sample particles from the initial distribution
         z_test = self.distribution_0.sample(self.cfg.test.batch_size, random.PRNGKey(1234))
-        if jax.devices()[0].platform == "gpu":
-            z_test = jax.device_put(z_test, jax.devices("gpu")[-1])
+        # if jax.devices()[0].platform == "gpu":
+        z_test = jax.device_put(z_test, jax.devices("cpu")[0])
         # 2. evolve the system to t = self.total_evolving_time
 
         forward_fn = lambda t, z: conv_fn_vmap(z, z)
@@ -76,13 +76,15 @@ class Flocking(ProblemInstance):
         tspace = jnp.array((0., self.total_evolving_time))
         result_forward = odeint(ode_func1, states_0, tspace, atol=self.cfg.ODE_tolerance, rtol=self.cfg.ODE_tolerance)
         z_T = result_forward["z"][-1]
+        velocity_T = conv_fn_vmap(z_T, z_T)
 
         print(f"preparing the ground truth by running the particle method with {self.cfg.test.batch_size} particles.")
         if jax.devices()[0].platform == "gpu":
             # x_T = jax.device_put(x_T, jax.devices("gpu")[0])
             # v_T = jax.device_put(v_T, jax.devices("gpu")[0])
             z_T = jax.device_put(z_T, jax.devices("gpu")[0])
-        return {"z_T": z_T, }
+            velocity_T = jax.device_put(velocity_T, jax.devices("gpu")[0])
+        return {"z_T": z_T, "velocity_T": velocity_T,}
 
 
     def run_particle_method_baseline(self):

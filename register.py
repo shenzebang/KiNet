@@ -1,6 +1,7 @@
 from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from example_problems.flocking_example import Flocking
 from example_problems.euler_poisson_with_drift import EulerPoissonWithDrift
+from example_problems.hlandau_example import HomogeneousLandau
 from methods.KiNet import KiNet
 from methods.PINN import PINN
 from omegaconf import DictConfig
@@ -12,6 +13,8 @@ def get_pde_instance(cfg: DictConfig):
         return Flocking
     elif cfg.pde_instance.name == "Euler-Poisson":
         return EulerPoissonWithDrift
+    elif cfg.pde_instance.name == "Homogeneous-Landau":
+        return HomogeneousLandau
     else:
         return NotImplementedError
 

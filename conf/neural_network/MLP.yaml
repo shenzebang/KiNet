@@ -3,5 +3,5 @@ n_resblocks: !!int 0
 initialization: !!str kaiming
 hidden_dim: !!int 20
 layers: !!int 8
-activation: !!str relu
+activation: !!str tanh
 name: !!str MLP

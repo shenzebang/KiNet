@@ -6,6 +6,7 @@ import jax.random as random
 from utils.common_utils import v_matmul
 from typing import List
 import warnings
+from core.rw_sampler import rw_metropolis_sampler
 
 
 class Distribution(ABC):
@@ -200,6 +201,41 @@ class UniformMixture(Distribution):
         return jnp.concatenate(_samples)
 
 
+def K(t):
+    return 1. - jnp.exp(-t/8.)/2.
+
+class BKW(Distribution):
+    def __init__(self, t_0: jnp.ndarray = jnp.zeros([]), dim: int = 2, n_sample = 5000) -> None:
+        super().__init__()
+        self.t_0 = t_0
+        self.dim = dim
+        self.n_sample = n_sample
+    
+    def sample(self, batch_size: int, key):
+        rng_keys = jax.random.split(key, batch_size)  # (nchains,)
+        initial_position = jnp.zeros([batch_size, self.dim])
+        run_mcmc = jax.vmap(rw_metropolis_sampler, in_axes=(0, None, None, 0), out_axes=0)
+
+        return run_mcmc(rng_keys, self.n_sample, self.logdensity, initial_position)
+
+    def logdensity(self, x: jnp.ndarray):
+        x_norm_2 = jnp.sum(x ** 2, axis=-1)
+        K_t = K(self.t_0)
+        return jnp.log(1 / 2 / jnp.pi / K_t) - x_norm_2 / 2. / K_t + jnp.log(
+            (2. * K_t - 1.) / K_t + (1. - K_t) / 2. / K_t ** 2 * x_norm_2)
+
+    def density(self, x: jnp.ndarray):
+        raise NotImplementedError
+    def score(self, x: jnp.ndarray):
+
+        def log_densities(x):
+            return jnp.sum(self.logdensity(x))
+
+        score_fn = jax.grad(log_densities)
+
+        return score_fn(x)
+    
+
 def get_uniforms_over_box_boundary(mins: jnp.ndarray, maxs: jnp.ndarray):
     if not (mins.ndim == 1 and maxs.ndim == 1):
         raise ValueError("mins and maxs should be 1-d array")
@@ -252,3 +288,4 @@ _score_gmm = jax.grad(_logdensity_gmm)
 # compute the gradient w.r.t. x
 
 v_score_gmm = jax.vmap(_score_gmm, in_axes=[0, None, None, None])
+

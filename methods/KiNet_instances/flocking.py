@@ -144,7 +144,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flock
 def test_fn(forward_fn, config, pde_instance: Flocking, rng):
     z_ground_truth = pde_instance.test_data["z_T"]
     acceleration_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, z_ground_truth)
-    acceleration_true = pde_instance.ground_truth(pde_instance.total_evolving_time, z_ground_truth)
+    acceleration_true = pde_instance.test_data["velocity_T"]
     relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((acceleration_pred - acceleration_true) ** 2, axis=-1)))
     relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(acceleration_true ** 2, axis=-1)))
 
