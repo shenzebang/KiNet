@@ -1,10 +1,10 @@
 import jax.numpy as jnp
-from core.distribution import Gaussian, DistributionKinetic, Uniform
+from core.distribution import Gaussian, Uniform
 import jax
 from jax.experimental.ode import odeint
 from api import ProblemInstance
 from utils.common_utils import v_gaussian_score, v_gaussian_log_density, gaussian_log_density
-from core.potential import QuadraticPotential
+from core.potential import QuadraticPotential, GMMPotential
 
 def _Kinetic_OU_process(t, configuration, beta, Gamma):
     assert t.ndim == 0
@@ -78,12 +78,17 @@ def initialize_configuration(domain_dim: int, beta):
     return {
         "Sigma_x_0_scale": Sigma_x_0_scale,
         "Sigma_x_0": jnp.eye(domain_dim) * Sigma_x_0_scale,
-        "mu_x_0": jnp.ones(domain_dim) * 2.,
+        # "mu_x_0": jnp.ones(domain_dim) * 2.,
+        "mu_x_0": jnp.ones(domain_dim) * 0.,
         "Sigma_v_0_scale": Sigma_v_0_scale,
         "Sigma_v_0": jnp.eye(domain_dim) * Sigma_v_0_scale,
         "mu_v_0": jnp.zeros(domain_dim),
+        # for OU
         "Sigma_x_inf": jnp.eye(domain_dim) / beta,
         "mu_x_inf": jnp.zeros(domain_dim),
+        # for GMM
+        "cov_GMM": jnp.ones([]) * 1, 
+        "mus_GMM": jnp.stack([jnp.array([-2., -2.]), jnp.array([-2., 2.]), jnp.array([2., -2.]), jnp.array([2., 2.])], axis=0),
     }
 
 def get_distribution_t(t, configuration, beta, Gamma):
@@ -94,8 +99,13 @@ def get_distribution_t(t, configuration, beta, Gamma):
     # distribution_v_0 = Gaussian(configuration["mu_v_0"], configuration["Sigma_v_0"])
     # return DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
 
-def get_potential(configuration):
-    return QuadraticPotential(configuration["mu_x_inf"], configuration["Sigma_x_inf"])
+def get_potential(potential_type, configuration):
+    if potential_type == "OU":
+        return QuadraticPotential(configuration["mu_x_inf"], configuration["Sigma_x_inf"])
+    elif potential_type == "GMM":
+        return GMMPotential(mus=configuration["mus_GMM"], cov=configuration["cov_GMM"])
+    else:
+        raise ValueError("Unknown potential")
 
 def prepare_test_data(configuration, total_evolving_time, beta, Gamma):
     test_time_stamps = jnp.linspace(jnp.zeros([]), total_evolving_time, num=11)
@@ -115,7 +125,7 @@ class KineticFokkerPlanck(ProblemInstance):
         self.beta = (self.diffusion_coefficient / 2) ** (2 / 3)
         self.Gamma = 2 * jnp.sqrt(self.beta)
         self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta)
-        self.target_potential = get_potential(self.initial_configuration)
+        self.target_potential = get_potential(self.cfg.pde_instance.potential, self.initial_configuration)
 
         # Analytical solution
         distribution_0 = get_distribution_t(jnp.zeros([]), self.initial_configuration, self.beta, self.Gamma)
@@ -143,7 +153,8 @@ class KineticFokkerPlanck(ProblemInstance):
         self.log_prob_0 = distribution_0.logdensity
 
         # Test data
-        self.test_data = prepare_test_data(self.initial_configuration, self.total_evolving_time, self.beta, self.Gamma)
+        if self.cfg.pde_instance.perform_test:
+            self.test_data = prepare_test_data(self.initial_configuration, self.total_evolving_time, self.beta, self.Gamma)
 
     def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
         # TODO: revise the implementation of the ground truth fn for FPE to accept any testing time.

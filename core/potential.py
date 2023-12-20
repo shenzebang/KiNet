@@ -29,9 +29,9 @@ class VoidPotential(Potential):
         return jnp.zeros_like(x)
 
 
-def gmm_V(x, mus, sigma):
+def gmm_V(x, mus, cov):
     # we use the broadcasting mechanism
-    a = - jnp.sum((x-mus)**2, axis=(1,))/(2 * sigma ** 2)
+    a = - jnp.sum((x-mus)**2, axis=-1)/(2 * cov)
     return - jax.scipy.special.logsumexp(a)
 
 g_gmm_V = jax.grad(gmm_V) # by default, grad computes gradient w.r.t. the first input, i.e. argnums = 0
@@ -46,14 +46,28 @@ g_gmm_V = jax.grad(gmm_V) # by default, grad computes gradient w.r.t. the first 
 vg_gmm_V = jax.vmap(g_gmm_V, in_axes=[0, None, None]) # only apply autobatching to the first input
 
 class GMMPotential(Potential):
-    def __init__(self, mus: jnp.DeviceArray, sigma: jnp.DeviceArray):
-        # we assume that the Gaussian component has the same sigma for simplicity
+    def __init__(self, mus: jnp.ndarray, cov: jnp.ndarray):
+        # we assume that the Gaussian component has the same cov for simplicity
+        assert mus.ndim == 2
+        self.n_Gaussian = mus.shape[0]
+        self.dim = mus.shape[-1]
         self.mus = mus
-        self.sigma = sigma
+
+        if cov.ndim == 0:
+            self.cov = cov
+        elif cov.ndim == 1 and len(cov) == 1:
+            self.cov = cov[0]
+        else:
+            raise ValueError("sigma should be a scalar!")
+        
 
     def gradient(self, x):
-        if len(x.shape) == 1:
-            return g_gmm_V(x, self.mus, self.sigma)
-        else:
-            return vg_gmm_V(x, self.mus, self.sigma)
+        assert x.ndim == 1 or x.ndim == 2
+        assert x.shape[-1] == self.dim
 
+        if len(x.shape) == 1:
+            return g_gmm_V(x, self.mus, self.cov)
+        elif len(x.shape) == 2:
+            return vg_gmm_V(x, self.mus, self.cov)
+        else:
+            raise ValueError("x should be either 1D (un-batched) or 2D (batched) array.")

@@ -5,3 +5,4 @@ boundary_condition: !!str None
 diffusion_coefficient: !!float 0
 total_evolving_time: !!float 2
 name: !!str Flocking
+perform_test: !!bool True

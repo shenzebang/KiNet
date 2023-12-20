@@ -10,6 +10,7 @@ from utils.plot_utils import plot_velocity
 import jax
 from jax.experimental.ode import odeint
 from core.distribution import Uniform
+import warnings
 
 class ProblemInstance:
     def __init__(self, cfg, rng):
@@ -52,20 +53,31 @@ class Method:
         pass
 
     def plot_fn(self, forward_fn, params, rng):
-        forward_fn = partial(forward_fn, params)
+        if self.cfg.pde_instance.domain_dim != 2 and self.cfg.pde_instance.domain_dim != 3:
+            msg = f"Plotting {self.cfg.pde_instance.domain_dim}D problem is not supported! Only 2D and 3D problems are supported."
+            warnings.warn(msg)
+            return
+        else:
+            forward_fn = partial(forward_fn, params)
 
-        dynamics_fn = self.pde_instance.forward_fn_to_dynamics(forward_fn)
+            dynamics_fn = self.pde_instance.forward_fn_to_dynamics(forward_fn)
 
-        states_0 = {"z": self.pde_instance.distribution_0.sample(batch_size=100, key=jax.random.PRNGKey(1))}
+            @jax.jit
+            def produce_data():
+                states_0 = {"z": self.pde_instance.distribution_0.sample(batch_size=200, key=rng)}
 
-        def ode_func1(states, t):
-            return {"z": dynamics_fn(t, states["z"])}
+                def ode_func1(states, t):
+                    return {"z": dynamics_fn(t, states["z"])}
 
-        tspace = jnp.linspace(0, self.pde_instance.total_evolving_time, num=200)
-        result_forward = odeint(ode_func1, states_0, tspace, atol=1e-6, rtol=1e-6)
-        z_0T = result_forward["z"]
+                tspace = jnp.linspace(0, self.pde_instance.total_evolving_time, num=201)
+                result_forward = odeint(ode_func1, states_0, tspace, atol=1e-6, rtol=1e-6)
+                z_0T = result_forward["z"]
 
-        plot_velocity(z_0T)
+                return z_0T
+            
+            z_0T = produce_data()
+
+            plot_velocity(self.pde_instance.total_evolving_time, z_0T)
 
     def create_model_fn(self) -> (nn.Module, Dict):
         raise NotImplementedError

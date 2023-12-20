@@ -8,17 +8,17 @@ import wandb
 import tempfile
 import warnings
 
-def plot_velocity(XV_0T: jnp.ndarray):
+def plot_velocity(total_time, XV_0T: jnp.ndarray):
     if XV_0T.shape[-1] == 6:
-        plot_velocity_3d(XV_0T)
+        plot_velocity_3d(total_time, XV_0T)
     elif XV_0T.shape[-1] == 4:
-        plot_velocity_2d(XV_0T)
+        plot_velocity_2d(total_time, XV_0T)
     else:
         msg = f"Plotting {XV_0T.shape[-1]/2}D problem is not supported! Only 2D and 3D problems are supported."
         warnings.warn(msg)
 
 
-def plot_velocity_2d(XV_0T: jnp.ndarray):
+def plot_velocity_2d(total_time, XV_0T: jnp.ndarray):
     X_0T, V_0T = jnp.split(XV_0T, indices_or_sections=2, axis=-1)
     C = jnp.hypot(V_0T[0, :, 0], V_0T[0, :, 1])
     T, N, D = X_0T.shape
@@ -27,17 +27,20 @@ def plot_velocity_2d(XV_0T: jnp.ndarray):
     quiver = ax.quiver(X_0T[0, :, 0], X_0T[0, :, 1], V_0T[0, :, 0], V_0T[0, :, 1], C, angles='xy', scale_units='xy',
                        scale=2)
 
-    ax.set_xlim(-10, 10)
-    ax.set_ylim(-10, 10)
+    xy_min = jnp.min(X_0T, axis=[0, 1])
+    xy_max = jnp.max(X_0T, axis=[0, 1])
+    scaling = 1.2
+    ax.set_xlim(xy_min[0] * scaling, xy_max[0] * scaling)
+    ax.set_ylim(xy_min[1] * scaling, xy_max[1] * scaling)
     title = ax.set_title("Time: 0")
-
+    time_unit = total_time / (T-1)
     def update(t):
         C = jnp.hypot(V_0T[t, :, 0], V_0T[t, :, 1])
         quiver.set_UVC(V_0T[t, :, 0], V_0T[t, :, 1], C=C)
         quiver.set_offsets(X_0T[t])
-        title.set_text(f"Time: {t}")
+        title.set_text(f"Time: {time_unit * t:.2f}")
 
-    ani = FuncAnimation(fig, update, frames=range(T), interval=200, repeat_delay=2000)
+    ani = FuncAnimation(fig, update, frames=range(T), interval=100, repeat_delay=2000)
     # ani.save('./velocity_field.gif', writer='pillow')
     tf = tempfile.NamedTemporaryFile(dir="./", suffix='.gif')
 
@@ -46,7 +49,7 @@ def plot_velocity_2d(XV_0T: jnp.ndarray):
     wandb.log({"video": wandb.Video(tf.name, fps=10, format='gif')})
     plt.close(fig)
 
-def plot_velocity_3d(XV_0T: jnp.ndarray):
+def plot_velocity_3d(total_time, XV_0T: jnp.ndarray):
     X_0T, V_0T = jnp.split(XV_0T, indices_or_sections=2, axis=-1)
     # C = jnp.hypot(V_0T[0, :, 0], V_0T[0, :, 1], )
     T, N, D = X_0T.shape

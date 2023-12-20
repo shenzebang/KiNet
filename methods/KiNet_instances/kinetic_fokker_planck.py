@@ -9,6 +9,7 @@ from example_problems.kinetic_fokker_planck_example import KineticFokkerPlanck
 from core.model import get_model
 from utils.common_utils import compute_pytree_norm
 import jax.random as random
+from utils.optimizer import get_optimizer
 import optax
 
 def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
@@ -247,21 +248,24 @@ def create_model_fn(pde_instance: KineticFokkerPlanck):
     # params = net.init(random.PRNGKey(11), jnp.zeros(1),
     #                   jnp.squeeze(pde_instance.distribution_0.sample(1, random.PRNGKey(1))))
 
-    print("Pretraining the hypothesis velocity field using the initial data to improve the performance.")
-    params = velocity_field_pretraining(pde_instance=pde_instance, net=net, params=params)
-    print("Finished pretraining.")
+    if pde_instance.cfg.train.pretrain:
+        print("Pretraining the hypothesis velocity field using the initial data to improve the performance.")
+        params = velocity_field_pretraining(pde_instance=pde_instance, net=net, params=params)
+        print("Finished pretraining.")
 
     return net, params
 
 def velocity_field_pretraining(pde_instance: KineticFokkerPlanck, net, params):
     # create an optimizer for pretrain
-    optimizer = optax.chain(optax.adaptive_grad_clip(1),
-                                    optax.add_decayed_weights(1e-2),
-                                    optax.sgd(learning_rate=1e-2, momentum=0.9)
-                                    )
+    # optimizer = optax.chain(optax.adaptive_grad_clip(1),
+    #                                 optax.add_decayed_weights(1e-2),
+    #                                 optax.sgd(learning_rate=1e-2, momentum=0.9)
+    #                                 )
+    optimizer = get_optimizer(pde_instance.cfg.train)
+
     opt_state = optimizer.init(params)
 
-    pretrain_steps = 4096
+    pretrain_steps = 40_000
     # pretrain using the initial data
     key_pretrains = random.split(random.PRNGKey(2199), pretrain_steps)
 
@@ -283,7 +287,7 @@ def velocity_field_pretraining(pde_instance: KineticFokkerPlanck, net, params):
 
     def update_fn(rng, params, opt_state):
         # sample from initial distribution
-        data_initial = pde_instance.distribution_0.sample(256, key_pretrain)
+        data_initial = pde_instance.distribution_0.sample(256, rng)
         grad = grad_fn(params, time_stampes, data_initial)
         updates, opt_state = optimizer.update(grad, opt_state, params)
         params = optax.apply_updates(params, updates)

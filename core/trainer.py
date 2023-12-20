@@ -85,7 +85,7 @@ class JaxTrainer:
             params_norm = compute_pytree_norm(self.params)
             v_g_etc["params_norm"] = params_norm
             wandb.log(v_g_etc, step=epoch)
-            if (epoch % self.cfg.test.frequency == 0 and self.method.test_fn is not None) or epoch >= self.cfg.train.number_of_iterations - 3:
+            if self.cfg.pde_instance.perform_test and (epoch % self.cfg.test.frequency == 0 or epoch >= self.cfg.train.number_of_iterations - 3):
                 result_epoch = test(self.params, rng_test)
                 wandb.log(result_epoch, step=epoch)
                 if self.cfg.test.verbose:
