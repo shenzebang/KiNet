@@ -9,7 +9,7 @@ from utils.optimizer import get_optimizer
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg):
-    print(OmegaConf.to_yaml(cfg))
+    # print(OmegaConf.to_yaml(cfg))
     wandb.login()
     pde_instance_name = f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"
     run = wandb.init(
@@ -40,7 +40,7 @@ def main(cfg):
                          params=params, optimizer=optimizer)
 
     # Fit the model
-    params_trained = trainer.fit()
+    trainer.fit()
 
     # Test the model
 

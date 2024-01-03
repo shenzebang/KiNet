@@ -7,3 +7,4 @@ total_evolving_time: !!float 2
 name: !!str Kinetic-Fokker-Planck
 perform_test: !!bool True
 potential: !!str OU
+include_score: !!bool True

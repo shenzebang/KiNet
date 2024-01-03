@@ -1,5 +1,5 @@
 from api import ProblemInstance
-from core.distribution import Uniform, Uniform_over_3d_Ball
+from core.distribution import Uniform, Uniform_over_3d_Ball, DistributionKineticDeterministic
 import jax.numpy as jnp
 import jax
 import jax.random as random
@@ -31,7 +31,7 @@ def conv_fn(x: jnp.ndarray, y: jnp.ndarray):
 conv_fn_vmap = jax.vmap(conv_fn, in_axes=[0, None])
 # =============================================
 
-t_0 = 1
+t_0 = 5
 
 threshold_0 = (3/4/jnp.pi * t_0) ** (1/3)
 
@@ -144,7 +144,8 @@ class EulerPoissonWithDrift(ProblemInstance):
         
         # Configurations that lead to an analytical solution
         self.drift_term = drift_term
-        distribution_x_0 = Uniform_over_3d_Ball(threshold_0)
+        self.distribution_x_0 = Uniform_over_3d_Ball(threshold_0)
+
 
         # Analytical solution
         self.u_0 = lambda x: u_t(jnp.zeros([]), x)
@@ -156,7 +157,9 @@ class EulerPoissonWithDrift(ProblemInstance):
         self.nabla_phi_t = nabla_phi_t
 
         # Distributions for KiNet
-        self.distribution_0 = distribution_x_0
+        self.distribution_0 = DistributionKineticDeterministic(self.distribution_x_0, self.u_0)
+        self.density_0 = self.distribution_x_0.density
+        # self.score_0 is not to be used
 
         # Distributions for PINN
         effective_domain_dim = cfg.pde_instance.domain_dim # (d for position)
@@ -168,11 +171,12 @@ class EulerPoissonWithDrift(ProblemInstance):
         self.distribution_domain = Uniform(self.mins, self.maxs)
 
         # Test data
-        self.test_data = self.prepare_test_data()
+        if self.cfg.pde_instance.perform_test:
+            self.test_data = self.prepare_test_data()
 
     def prepare_test_data(self):
         print(f"Using the instance {self.instance_name}. Will use the close-form solution to test accuracy.")
-        x_test = self.distribution_0.sample(self.cfg.test.batch_size, random.PRNGKey(1234))
+        x_test = self.distribution_x_0.sample(self.cfg.test.batch_size, random.PRNGKey(1234))
         return {"x_T": x_test, }
 
     def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
@@ -183,11 +187,11 @@ class EulerPoissonWithDrift(ProblemInstance):
         return ground_truth_op_vmapx_vmapt(ts, xs)
         
     # def ground_truth_t(self, xs: jnp.ndarray, t: jnp.ndarray):
-    def forward_fn_to_dynamics(self, forward_fn):
+    def forward_fn_to_dynamics(self, forward_fn, time_offset=jnp.zeros([])):
         def dynamics(t, z):
             x, v = jnp.split(z, indices_or_sections=2, axis=-1)
             dx = v
-            dv = forward_fn(t, x) + self.drift_term(t, x)
+            dv = forward_fn(t, x) + self.drift_term(t + time_offset, x)
             dz = jnp.concatenate([dx, dv], axis=-1)
             return dz
 

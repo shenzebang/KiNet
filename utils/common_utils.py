@@ -1,8 +1,8 @@
 import jax
 import jax.numpy as jnp
 import math
-
-
+from jax import grad, vjp
+from jax.experimental.ode import odeint
 
 
 def _divergence_fn(f, _x, _v):
@@ -36,6 +36,36 @@ def divergence_fn(f, _x: jnp.ndarray, _v=None):
         return batch_div_bf_fn(f, _x)
     else:
         return batch_div_fn(f, _x, _v).mean(axis=0)
+
+def evolve_data_and_score(dynamics_fn, time_interval, data, score):
+    states_0 = {
+        "z": data,
+    }
+    if score is not None:
+        states_0["xi"] = score 
+    
+    def ode_func1(states, t):
+        bar_f_t_theta = lambda _x: dynamics_fn(t, _x)
+        def h_t_theta(xi, z):
+            div_bar_f_t_theta = lambda _z: divergence_fn(bar_f_t_theta, _z).sum(axis=0)
+            grad_div_fn = grad(div_bar_f_t_theta)
+            h1 = - grad_div_fn(z)
+            _, vjp_fn = vjp(bar_f_t_theta, z)
+            h2 = - vjp_fn(xi)[0]
+            return h1 + h2
+        update = {"z": bar_f_t_theta(states["z"]), }
+        if "xi" in states:
+            update["xi"] = h_t_theta(states["xi"], states["z"])
+
+        return update
+
+    result_forward = odeint(ode_func1, states_0, time_interval, atol=1e-5, rtol=1e-5)
+    if score is not None:
+        return result_forward["z"][-1], result_forward["xi"][-1]
+    else:
+        return result_forward["z"][-1], None
+
+
 
 
 def _gaussian_score(x, cov, mu): # return the score for a given Gaussian(mu, Sigma) at x

@@ -3,6 +3,7 @@ from core.distribution import Uniform, BKW, Gaussian
 import jax.numpy as jnp
 import jax
 import jax.random as random
+from functools import partial
 
 # TODO:
 # 1. Define kernel
@@ -94,6 +95,8 @@ class HomogeneousLandau(ProblemInstance):
 
         # Distributions for KiNet
         self.distribution_0 = distribution_x_0
+        self.density_0 = partial(self.density_t, jnp.zeros([]))
+        self.score_0 = partial(self.score_t, jnp.zeros([]))
 
         # Distributions for PINN
         effective_domain_dim = cfg.pde_instance.domain_dim # (d for position)
@@ -119,7 +122,7 @@ class HomogeneousLandau(ProblemInstance):
         
         return density_fn(ts, xs)
 
-    def forward_fn_to_dynamics(self, forward_fn):
+    def forward_fn_to_dynamics(self, forward_fn, time_offset=jnp.zeros([])):
         def dynamics(t, x):
             return forward_fn(t, x)
 

@@ -151,6 +151,8 @@ class KineticFokkerPlanck(ProblemInstance):
         self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
         self.log_prob_0 = distribution_0.logdensity
+        self.score_0 = distribution_0.score
+        self.density_0 = distribution_0.density
 
         # Test data
         if self.cfg.pde_instance.perform_test:
@@ -174,7 +176,7 @@ class KineticFokkerPlanck(ProblemInstance):
 
         return scores_true, log_densities_true
 
-    def forward_fn_to_dynamics(self, forward_fn):
+    def forward_fn_to_dynamics(self, forward_fn, time_offset=jnp.zeros([])):
         def dynamics(t, z):
             x, v = jnp.split(z, indices_or_sections=2, axis=-1)
             dx = v

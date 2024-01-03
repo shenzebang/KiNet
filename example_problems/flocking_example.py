@@ -47,11 +47,13 @@ class Flocking(ProblemInstance):
 
         # Distributions for KiNet
         self.distribution_0 = DistributionKinetic(distribution_x=distribution_x_0, distribution_v=distribution_v_0)
+        self.density_0 = self.distribution_0.density
         
         # Distributions for PINN
 
         # Test data
-        self.test_data = self.prepare_test_data()
+        if self.cfg.pde_instance.perform_test:
+            self.test_data = self.prepare_test_data()
 
         # self.run_particle_method_baseline()
 
@@ -121,11 +123,11 @@ class Flocking(ProblemInstance):
 
         return conv_fn_vmap(zs, self.test_data["z_T"])
 
-    def forward_fn_to_dynamics(self, forward_fn):
+    def forward_fn_to_dynamics(self, forward_fn, time_offset=jnp.zeros([])):
         def dynamics(t, z):
             x, v = jnp.split(z, indices_or_sections=2, axis=-1)
             dx = v
-            dv = forward_fn(t, z) + self.drift_term(t, x)
+            dv = forward_fn(t, z) + self.drift_term(t + time_offset, x)
             dz = jnp.concatenate([dx, dv], axis=-1)
             return dz
 

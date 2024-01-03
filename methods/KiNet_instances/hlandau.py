@@ -11,24 +11,26 @@ import jax.random as random
 import optax
 from tqdm import tqdm
 
-def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: HomogeneousLandau):
+def value_and_grad_fn(forward_fn, params, time_interval, data, rng, config, pde_instance: HomogeneousLandau):
+    time_interval_current = time_interval["current"]
+    time_offset = time_interval["current"][-1] * len(time_interval["previous"])
+    
     params_flat, params_tree = tree_flatten(params)
-    f = lambda _x, _t, _params: forward_fn(_params, _t, _x)
+    f_fn = lambda _x, _t, _params: forward_fn(_params, _t, _x)
 
     # unpack the parameters
-    T = pde_instance.total_evolving_time
     ODE_tolerance = config["ODE_tolerance"]
+
     # unpack the data
-    x_0, ref_0 = data["data_initial"], data["data_ref"]
+    n_train = data["data_initial"].shape[0]
 
-    n_train = x_0.shape[0]
+    x_0 = jnp.concatenate([data["data_initial"], data["data_ref"]], axis=0)
 
-    x_0 = jnp.concatenate([x_0, ref_0], axis=0)
+    # xi_0 = pde_instance.score_t(jnp.zeros([]), x_0)
+    xi_0 = jnp.concatenate([data["score_initial"], data["score_ref"]], axis=0)
 
-    xi_0 = pde_instance.score_t(jnp.zeros([]), x_0)
-
-    weight_0 = pde_instance.density_t(jnp.zeros([]), x_0) / pde_instance.distribution_0.density(x_0)
-    weight_train, weight_ref = jnp.split(weight_0, [n_train], axis=0)
+    # weight_0 = pde_instance.density_t(jnp.zeros([]), x_0) / pde_instance.distribution_0.density(x_0)
+    weight_train, weight_ref = data["weight_initial"], data["weight_ref"]
 
     # compute x(T) by solve IVP (I)
     # ================ Forward ===================
@@ -42,7 +44,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Homog
     def ode_func1(states, t):
         x = states["x"]
         xi = states["xi"]
-        f_t_theta = lambda _x: f(_x, t, params)
+        f_t_theta = lambda _x: f_fn(_x, t, params)
         dx = f_t_theta(x)
 
         def h_t_theta(in_1, in_2):
@@ -81,8 +83,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Homog
             "loss": dloss,
         }
 
-    tspace = jnp.array((0., T))
-    result_forward = odeint(ode_func1, states_0, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
+    result_forward = odeint(ode_func1, states_0, time_interval_current, atol=ODE_tolerance, rtol=ODE_tolerance)
     x_T = result_forward["x"][1]
     xi_T = result_forward["xi"][1]
     loss_f = result_forward["loss"][1]
@@ -107,13 +108,13 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Homog
         # [x_T, a_T, b_T, xi_T, loss_T, grad_T, ref_T, score_ref_T]
 
     def ode_func2(states, t):
-        t = T - t
+        t = time_interval_current[-1] - t
         x = states["x"]
         xi = states["xi"]
         a = states["a"]
         b = states["b"]
 
-        f_t = lambda _x, _params: f(_x, t, _params)
+        f_t = lambda _x, _params: f_fn(_x, t, _params)
         # bar_f_t = lambda _x, _params: bar_f(_x, t, _params)
         dx = f_t(x, params)
 
@@ -179,8 +180,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Homog
         }
 
     # ================ Backward ==================
-    tspace = jnp.array((0., T))
-    result_backward = odeint(ode_func2, states_T, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
+    result_backward = odeint(ode_func2, states_T, time_interval_current, atol=ODE_tolerance, rtol=ODE_tolerance)
 
     grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]])
 
@@ -192,17 +192,20 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Homog
             }
 
 
-def test_fn(forward_fn, config, pde_instance: HomogeneousLandau, rng):
+def test_fn(forward_fn, time_interval, pde_instance: HomogeneousLandau, rng):
     x_ground_truth = pde_instance.test_data["x_T"]
     # test_time_stamps = jnp.linspace(0, pde_instance.total_evolving_time, 11)
-    test_time_stamps = jnp.ones([1]) * pde_instance.total_evolving_time
+    # test_time_stamps = 
     forward_fn_vmapt = jax.vmap(forward_fn, in_axes=[0, None])
     velocity_fn_vmapt = jax.vmap(pde_instance.velocity_t, in_axes=[0, None])
-    conv_pred = forward_fn_vmapt(test_time_stamps, x_ground_truth)
-    conv_true = velocity_fn_vmapt(test_time_stamps, x_ground_truth)
+    conv_pred = forward_fn_vmapt(time_interval["current"][-1] * jnp.ones([1]), x_ground_truth)
+    conv_true = velocity_fn_vmapt(time_interval["current"][-1] * (len(time_interval["previous"]) + 1) * jnp.ones([1]), x_ground_truth)
     relative_l2_velocity = jnp.mean(jnp.sqrt(jnp.sum((conv_pred - conv_true) ** 2, axis=-1)), axis=-1)
     relative_l2_velocity = relative_l2_velocity / jnp.mean(jnp.sqrt(jnp.sum(conv_true ** 2, axis=-1)), axis=-1)
     # return {"relative l2 error (average over time)": jnp.mean(relative_l2), "relative l2 error (maximum over time)": jnp.max(relative_l2)}
+    
+    return {"relative l2 (velocity)": relative_l2_velocity, }
+    # TODO: Include the test for density
 
     T = pde_instance.total_evolving_time
 

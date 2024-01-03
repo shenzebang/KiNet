@@ -9,33 +9,39 @@ from example_problems.euler_poisson_with_drift import EulerPoissonWithDrift, con
 from core.model import get_model
 import jax.random as random
 import optax
+from utils.optimizer import get_optimizer
 
 
-def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: EulerPoissonWithDrift):
-    # unpack the parameters
-    T = pde_instance.total_evolving_time
+def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_instance: EulerPoissonWithDrift):
+    time_interval_current = time_interval["current"]
+    time_offset = time_interval["current"][-1] * len(time_interval["previous"])
     # unpack the data
-    x_0, x_ref = data["data_initial"], data["data_ref"]
-    v_0, v_ref = pde_instance.u_0(x_0), pde_instance.u_0(x_ref)
+    z_0, z_ref = data["data_initial"], data["data_ref"]
 
     params_flat, params_tree = tree_flatten(params)
 
-    def hypothesis_velocity_field_fn(z, t, _params):
-        x, v = jnp.split(z, indices_or_sections=2, axis=-1)
-        dx = v
-        dv = forward_fn(_params, t, x) + pde_instance.drift_term(t, x)
-        dz = jnp.concatenate([dx, dv], axis=-1)
-        return dz
 
-    def conv_pred_fn(z, t, _params):
+    def bar_f_fn(_z, _t, _params):
+        forward_fn_params = lambda t, z: forward_fn(_params, t, z)
+        dynamics = pde_instance.forward_fn_to_dynamics(forward_fn_params, time_offset)
+        return dynamics(_t, _z)
+    
+    # def bar_f(z, t, _params):
+    #     x, v = jnp.split(z, indices_or_sections=2, axis=-1)
+    #     dx = v
+    #     dv = forward_fn(_params, t, x) + pde_instance.drift_term(t, x)
+    #     dz = jnp.concatenate([dx, dv], axis=-1)
+    #     return dz
+
+    def f_fn(z, t, _params):
         x, v = jnp.split(z, indices_or_sections=2, axis=-1)
         return forward_fn(_params, t, x)
 
     # compute x(T) by solve IVP (I)
     # ================ Forward ===================
     states_0 = {
-        "z": jnp.concatenate([x_0, v_0], axis=-1),
-        "ref": jnp.concatenate([x_ref, v_ref], axis=-1),
+        "z": z_0,
+        "ref": z_ref,
         "loss": jnp.zeros([]),
     }
 
@@ -43,18 +49,17 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
         def g_t(z, ref):
             x, _ = jnp.split(z, indices_or_sections=2, axis=-1)
             x_ref, _ = jnp.split(ref, indices_or_sections=2, axis=-1)
-            conv_pred = conv_pred_fn(z, t, params)
+            conv_pred = f_fn(z, t, params)
             conv = conv_fn_vmap(x, x_ref)
-            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1))
+            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1)) / time_interval_current[-1] # normalize the loss w.r.t. the time.
 
         return {
-            "z": hypothesis_velocity_field_fn(states["z"], t, params),
-            "ref": hypothesis_velocity_field_fn(states["ref"], t, params),
+            "z": bar_f_fn(states["z"], t, params),
+            "ref": bar_f_fn(states["ref"], t, params),
             "loss": g_t(states["z"], states["ref"])
         }
 
-    tspace = jnp.array((0., T))
-    result_forward = odeint(ode_func1, states_0, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
+    result_forward = odeint(ode_func1, states_0, time_interval_current, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
     loss_f = result_forward["loss"][-1]
     # ================ Forward ===================
 
@@ -71,10 +76,10 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
 
 
     def ode_func2(states, t):
-        t = T - t
+        t = time_interval_current[-1] - t
 
-        f_t = lambda _z, _params: conv_pred_fn(_z, t, _params)
-        bar_f_t = lambda _z, _params: hypothesis_velocity_field_fn(_z, t, _params)
+        f_t = lambda _z, _params: f_fn(_z, t, _params)
+        bar_f_t = lambda _z, _params: bar_f_fn(_z, t, _params)
 
 
         _, vjp_fx_fn = vjp(lambda _z: bar_f_t(_z, params), states["z"])
@@ -93,7 +98,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
             x_ref, _ =  jnp.split(ref, indices_or_sections=2, axis=-1)
             conv_pred = f_t(z, _params)
             conv = conv_fn_vmap(x, x_ref)
-            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1))
+            return jnp.mean(jnp.sum((conv_pred - conv) ** 2, axis=-1)) / time_interval_current[-1] # normalize the loss w.r.t. the time.
 
         dxg = jax.grad(g_t, argnums=0)
         dxrefg = jax.grad(g_t, argnums=1)
@@ -118,8 +123,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
         }
 
     # ================ Backward ==================
-    tspace = jnp.array((0., T))
-    result_backward = odeint(ode_func2, states_T, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
+    result_backward = odeint(ode_func2, states_T, time_interval_current, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
     grad = tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]])
     grad_norm = compute_pytree_norm(grad)
 
@@ -132,7 +136,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Euler
     }
 
 
-def plot_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
+def plot_fn(forward_fn, pde_instance: EulerPoissonWithDrift, rng):
     def hypothesis_velocity_field_fn(_z, _t):
         x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
         dx = v
@@ -156,12 +160,14 @@ def plot_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
     plot_velocity(z_0T)
 
 
-def test_fn(forward_fn, config, pde_instance: EulerPoissonWithDrift, rng):
+def test_fn(forward_fn, time_interval, pde_instance: EulerPoissonWithDrift, rng):
+    # TODO: use time_interval in test module
     x_ground_truth = pde_instance.test_data["x_T"]
-    test_time_stamps = jnp.linspace(0, pde_instance.total_evolving_time, 11)
+    test_time_stamps = jnp.linspace(time_interval["current"][0], time_interval["current"][-1], 11)
+    time_offset = time_interval["current"][-1] * len(time_interval["previous"])
     forward_fn_vmapt = jax.vmap(forward_fn, in_axes=[0, None])
     conv_pred = forward_fn_vmapt(test_time_stamps, x_ground_truth)
-    conv_true = pde_instance.ground_truth(test_time_stamps, x_ground_truth)
+    conv_true = pde_instance.ground_truth(test_time_stamps + time_offset, x_ground_truth)
     relative_l2 = jnp.mean(jnp.sqrt(jnp.sum((conv_pred - conv_true) ** 2, axis=-1)), axis=-1)
     relative_l2 = relative_l2 / jnp.mean(jnp.sqrt(jnp.sum(conv_true ** 2, axis=-1)), axis=-1)
     return {"relative l2 error (average over time)": jnp.mean(relative_l2), "relative l2 error (maximum over time)": jnp.max(relative_l2)}
@@ -173,25 +179,27 @@ def create_model_fn(pde_instance: EulerPoissonWithDrift):
     # net = KiNet_Debug(output_dim=3, time_embedding_dim=0)
     # net = KiNet_Debug_2(output_dim=3, time_embedding_dim=0)
     # net = KiNet_ResNet(output_dim=3, time_embedding_dim=16, n_resblocks=3)
-    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
+    params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_x_0.sample(1, random.PRNGKey(1)))
     params = velocity_field_pretraining(pde_instance, net, params)
     return net, params
 
 def velocity_field_pretraining(pde_instance: EulerPoissonWithDrift, net, params):
     # create an optimizer for pretrain
-    optimizer = optax.chain(optax.adaptive_grad_clip(1),
-                                    optax.add_decayed_weights(1e-3),
-                                    optax.sgd(learning_rate=1e-2, momentum=0.9)
-                                    )
+    # optimizer = optax.chain(optax.adaptive_grad_clip(1),
+    #                                 optax.add_decayed_weights(1e-3),
+    #                                 optax.sgd(learning_rate=1e-2, momentum=0.9)
+    #                                 )
+    optimizer = get_optimizer(pde_instance.cfg.train)
     opt_state = optimizer.init(params)
 
-    pretrain_steps = 4096
+    pretrain_steps = 40_000
     # pretrain using the initial data
     key_pretrains = random.split(random.PRNGKey(2199), pretrain_steps)
 
+    time_per_shard = pde_instance.cfg.pde_instance.total_evolving_time / pde_instance.cfg.train.number_of_time_shard
 
     # create time stamps:
-    time_stampes = jnp.linspace(0, pde_instance.total_evolving_time, 128)
+    time_stampes = jnp.linspace(0, time_per_shard, 128)
     
     def pretrain_loss_fn(params, t, data):
         conv_true_0 = pde_instance.ground_truth(jnp.zeros([]), data)
@@ -206,7 +214,7 @@ def velocity_field_pretraining(pde_instance: EulerPoissonWithDrift, net, params)
 
     def update_fn(rng, params, opt_state):
         # sample from initial distribution
-        data_initial = pde_instance.distribution_0.sample(256, key_pretrain)
+        data_initial = pde_instance.distribution_x_0.sample(256, rng)
         grad = grad_fn(params, time_stampes, data_initial)
         updates, opt_state = optimizer.update(grad, opt_state, params)
         params = optax.apply_updates(params, updates)

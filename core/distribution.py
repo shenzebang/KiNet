@@ -22,6 +22,20 @@ class Distribution(ABC):
     def density(self, x: jnp.ndarray):
         raise NotImplementedError
 
+class DistributionKineticDeterministic(Distribution):
+    def __init__(self, distribution_x: Distribution, u):
+        self.distribution_x = distribution_x
+        self.u = u
+    
+    def sample(self, batch_size: int, key):
+        x = self.distribution_x.sample(batch_size, key)
+        v = self.u(x)
+        z = jnp.concatenate([x, v], axis=-1)
+        return z
+    
+    def density(self, z: jnp.ndarray):
+        x, _ = jnp.split(z, indices_or_sections=2, axis=-1)
+        return self.distribution_x.density(x)
 
 class DistributionKinetic(Distribution):
     def __init__(self, distribution_x: Distribution, distribution_v: Distribution):
@@ -91,12 +105,22 @@ class Gaussian(Distribution):
 class Uniform_over_3d_Ball(Distribution):
     def __init__(self, r):
         self.r = r
+        self.volume = 4. / 3. * jnp.pi * r ** 3
 
     def sample(self, batch_size: int, key):
         return jax.random.ball(key, d=3, p=2, shape=[batch_size]) * self.r
 
     def score(self, x: jnp.ndarray):
         return jnp.zeros_like(x)
+    
+    def density(self, x: jnp.ndarray):
+        warnings.warn("This implementation is not complete. Should check if x is within the ball!")
+        if x.ndim == 1:
+            return jnp.ones([]) / self.volume
+        elif x.ndim == 2:
+            return jnp.ones(x.shape[0]) / self.volume
+        else:
+            raise ValueError("The input should be either 1D (unbatched) or 2D (batched).")
 
 
 class GaussianMixture(Distribution):

@@ -6,3 +6,4 @@ diffusion_coefficient: !!float 2
 total_evolving_time: !!float 1
 name: !!str Homogeneous-Landau
 perform_test: !!bool True
+include_score: !!bool True

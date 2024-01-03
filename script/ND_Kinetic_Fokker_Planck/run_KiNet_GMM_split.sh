@@ -1,14 +1,13 @@
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
 python main.py \
     pde_instance=nd_fokker_planck_GMM \
-    pde_instance.total_evolving_time=.5 \
     pde_instance.domain_dim=2 \
     train.optimizer.weight_decay=0 \
     solver.train.batch_size_ref=0 \
     neural_network.hidden_dim=256 \
     neural_network.layers=2 \
     train.batch_size=1024 \
-    backend.use_pmap_train=False \
+    backend.use_pmap_train=True \
     train.optimizer.learning_rate.initial=1e-3 \
     neural_network.time_embedding_dim=20 \
     train.optimizer.method=ADAM \
@@ -16,5 +15,8 @@ python main.py \
     train.optimizer.learning_rate.scheduling=warmup-cosine \
     neural_network.activation=tanh \
     plot.frequency=999999 \
-    train.pretrain=True
+    train.pretrain=True \
+    pde_instance.total_evolving_time=10 \
+    train.number_of_time_shard=20 \
+    train.number_of_iterations=20000
     # train.optimizer.grad_clipping.type=global

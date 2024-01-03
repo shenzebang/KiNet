@@ -11,21 +11,23 @@ import jax.random as random
 
 
 
-def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flocking):
+def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_instance: Flocking):
+    time_interval_current = time_interval["current"]
+    time_offset = time_interval["current"][-1] * len(time_interval["previous"])
+    # use time_interval in training module
     # unpack the parameters
     ODE_tolerance = config["ODE_tolerance"]
-    T = pde_instance.total_evolving_time
+    # T = pde_instance.total_evolving_time
     # unpack the data
-    z_0, z_ref = data["data_initial"], data["data_ref"]
 
-    n_train = z_0.shape[0]
-    z_0 = jnp.concatenate([z_0, z_ref], axis=0)
+    n_train = data["data_initial"].shape[0]
+    z_0 = jnp.concatenate([data["data_initial"], data["data_ref"]], axis=0)
 
     params_flat, params_tree = tree_flatten(params)
 
-    def bar_f(_z, _t, _params):
+    def bar_f_fn(_z, _t, _params):
         forward_fn_params = lambda t, z: forward_fn(_params, t, z)
-        dynamics = pde_instance.forward_fn_to_dynamics(forward_fn_params)
+        dynamics = pde_instance.forward_fn_to_dynamics(forward_fn_params, time_offset)
         return dynamics(_t, _z)
     # def bar_f(_z, _t, _params):
     #     x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
@@ -34,25 +36,24 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flock
     #     dz = jnp.concatenate([dx, dv], axis=-1)
     #     return dz
 
-    def f(_z, _t, _params):
+    def f_fn(_z, _t, _params):
         dv_pred = forward_fn(_params, _t, _z)
         return dv_pred
 
     # compute x(T) by solve IVP (I)
     # ================ Forward ===================
-    loss_0 = jnp.zeros([])
     states_0 = {
         "z": z_0,
-        "loss": loss_0
+        "loss": jnp.zeros([])
     }
 
     def ode_func1(states, t):
         z = states["z"]
-        dz = bar_f(z, t, params)
+        dz = bar_f_fn(z, t, params)
 
         def g_t(_z):
             z_train, z_ref = jnp.split(_z, [n_train], axis=0)
-            acceleration = f(z_train, t, params)
+            acceleration = f_fn(z_train, t, params)
             return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref)) ** 2, axis=(1,)))
 
         dloss = g_t(z)
@@ -62,33 +63,28 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flock
             "loss": dloss
         }
 
-    tspace = jnp.array((0., T))
-    result_forward = odeint(ode_func1, states_0, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
-    z_T = result_forward["z"][1]
-    loss_f = result_forward["loss"][1]
+    result_forward = odeint(ode_func1, states_0, time_interval_current, atol=ODE_tolerance, rtol=ODE_tolerance)
+    loss_f = result_forward["loss"][-1]
     # ================ Forward ===================
 
     # ================ Backward ==================
     # compute dl/d theta via adjoint method
-    a_T = jnp.zeros_like(z_T)
-    grad_T = [jnp.zeros_like(_var) for _var in params_flat]
-    loss_T = jnp.zeros([])
     states_T = {
-        "z": z_T,
-        "a": a_T,
-        "loss": loss_T,
-        "grad": grad_T,
+        "z": result_forward["z"][-1],
+        "a": jnp.zeros_like(z_0),
+        "loss": jnp.zeros([]),
+        "grad": [jnp.zeros_like(_var) for _var in params_flat],
     }
 
     def ode_func2(states, t):
-        t = T - t
+        t = time_interval_current[-1] - t
         z = states["z"]
 
         a = states["a"]
 
 
-        f_t = lambda _x, _params: f(_x, t, _params)
-        bar_f_t = lambda _x, _params: bar_f(_x, t, _params)
+        f_t = lambda _x, _params: f_fn(_x, t, _params)
+        bar_f_t = lambda _x, _params: bar_f_fn(_x, t, _params)
         dz = bar_f_t(z, params)
 
         _, vjp_fx_fn = vjp(lambda _x: bar_f_t(_x, params), z)
@@ -121,8 +117,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flock
 
 
     # ================ Backward ==================
-    tspace = jnp.array((0., T))
-    result_backward = odeint(ode_func2, states_T, tspace, atol=ODE_tolerance, rtol=ODE_tolerance)
+    result_backward = odeint(ode_func2, states_T, time_interval_current, atol=ODE_tolerance, rtol=ODE_tolerance)
 
     grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]])
     # x_0_b = result_backward[0][-1]
@@ -141,7 +136,8 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Flock
         "grad norm": compute_pytree_norm(grad_T),
     }
 
-def test_fn(forward_fn, config, pde_instance: Flocking, rng):
+def test_fn(forward_fn, time_interval, pde_instance: Flocking, rng):
+    # use time_interval in testing module
     z_ground_truth = pde_instance.test_data["z_T"]
     acceleration_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, z_ground_truth)
     acceleration_true = pde_instance.test_data["velocity_T"]

@@ -6,3 +6,4 @@ diffusion_coefficient: !!float 0
 total_evolving_time: !!float 2
 name: !!str Euler-Poisson
 perform_test: !!bool True
+include_score: !!bool False

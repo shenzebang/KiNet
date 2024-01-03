@@ -12,15 +12,17 @@ import jax.random as random
 from utils.optimizer import get_optimizer
 import optax
 
-def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: KineticFokkerPlanck):
+def value_and_grad_fn(forward_fn, params, time_interval, data, rng, config, pde_instance: KineticFokkerPlanck):
+    time_interval_current = time_interval["current"]
+    time_offset = time_interval["current"][-1] * len(time_interval["previous"])
     params_flat, params_tree = tree_flatten(params)
 
-    def bar_f(_z, _t, _params):
+    def bar_f_fn(_z, _t, _params):
         forward_fn_params = lambda t, z: forward_fn(_params, t, z)
-        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn_params)
+        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn_params, time_offset)
         return dynamics_fn(_t, _z)
 
-    def f(_z, _t, _params):
+    def f_fn(_z, _t, _params):
         score = forward_fn(_params, _t, _z)
         return score
 
@@ -28,13 +30,13 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
     # ================ Forward ===================
     states_0 = {
         "z": data["data_initial"],
-        "xi": pde_instance.distribution_0.score(data["data_initial"]),
+        "xi": data["score_initial"],
         "loss": jnp.zeros([])
     }
 
     def ode_func1(states, t):
-        f_t_theta = lambda _x: f(_x, t, params)
-        bar_f_t_theta = lambda _x: bar_f(_x, t, params)
+        f_t_theta = lambda _x: f_fn(_x, t, params)
+        bar_f_t_theta = lambda _x: bar_f_fn(_x, t, params)
 
         def h_t_theta(xi, z):
             div_bar_f_t_theta = lambda _z: divergence_fn(bar_f_t_theta, _z).sum(axis=0)
@@ -54,8 +56,8 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
             "xi": h_t_theta(states["xi"], states["z"]),
             "loss": g_t(states["xi"], states["z"]),}
 
-    tspace = jnp.array((0., pde_instance.total_evolving_time))
-    result_forward = odeint(ode_func1, states_0, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
+    # tspace = jnp.array((0., pde_instance.total_evolving_time))
+    result_forward = odeint(ode_func1, states_0, time_interval_current, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
     z_T = result_forward["z"][-1]
     xi_T = result_forward["xi"][-1]
     loss_f = result_forward["loss"][-1]
@@ -73,10 +75,10 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
     }
 
     def ode_func2(states, t):
-        t = pde_instance.total_evolving_time - t
+        t = time_interval_current[-1] - t
 
-        f_t = lambda _x, _params: f(_x, t, _params)
-        bar_f_t = lambda _x, _params: bar_f(_x, t, _params)
+        f_t = lambda _x, _params: f_fn(_x, t, _params)
+        bar_f_t = lambda _x, _params: bar_f_fn(_x, t, _params)
 
         _, vjp_fx_fn = vjp(lambda _x: bar_f_t(_x, params), states["z"])
         vjp_fx_a = vjp_fx_fn(states["a"])[0]
@@ -133,8 +135,7 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
         }
 
     # ================ Backward ==================
-    tspace = jnp.array((0., pde_instance.total_evolving_time))
-    result_backward = odeint(ode_func2, states_T, tspace, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
+    result_backward = odeint(ode_func2, states_T, time_interval_current, atol=config["ODE_tolerance"], rtol=config["ODE_tolerance"])
 
     grad_T = tree_unflatten(params_tree, [_var[-1] for _var in result_backward["grad"]])
     # x_0_b = result_backward[0][-1]
@@ -185,7 +186,8 @@ def value_and_grad_fn(forward_fn, params, data, rng, config, pde_instance: Kinet
 #     plot_velocity(z_0T)
 
 
-def test_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
+def test_fn(forward_fn, time_interval, pde_instance: KineticFokkerPlanck, rng):
+    # TODO: use time_interval in the testing module
     # compute the KL divergence and Fisher-information
     def bar_f(_z, _t):
         dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
