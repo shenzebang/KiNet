@@ -123,69 +123,71 @@ class Uniform_over_3d_Ball(Distribution):
             raise ValueError("The input should be either 1D (unbatched) or 2D (batched).")
 
 
-class GaussianMixture(Distribution):
-    def __init__(self, mus: List[jnp.ndarray], sigmas: List[jnp.ndarray]):
-        # we assume uniform weight among the Gaussians
+class GaussianMixtureModel(Distribution):
+    def __init__(self, mus: List[jnp.ndarray], covs: List[jnp.ndarray], weights: jnp.ndarray | None = None):
         self.n_Gaussians = len(mus)
-        assert self.n_Gaussians == len(sigmas)
-        # assert self.n_Gaussians == weights.shape[0]
-        # assert all(weights > 0)
+        assert self.n_Gaussians == len(covs)
 
-        # self.weights = weights / jnp.sum(weights)
-        self.dim = mus[0].shape[0]
+        # check weights
+        if weights == None:
+            weights = jnp.ones([self.n_Gaussians])/self.n_Gaussians
+        
+        
+        if weights.ndim != 1:
+            raise ValueError("weights should be a 1D array")
+        
+        if weights.shape[0] != self.n_Gaussians:
+            raise ValueError("The number of weights does not match the number of Gaussians!")
+        
+        if jnp.any(weights <= 0):
+            raise ValueError("The weights should be positive!")
+        
+        self.log_weights = jnp.log(weights)
+        
+        # check shape of mus and covs
+        assert mus[0].ndim == 1
+        self.mus = jnp.stack(mus, axis=0)
+        self.dim = self.mus.shape[-1]
 
-        self.mus = mus
-        self.sigmas = sigmas
-        self.covs, self.inv_covs, self.dets = [], [], []
+        assert covs[0].ndim == 2
+        self.covs = jnp.stack(covs, axis=0)
+        assert self.covs.shape[-1] == self.dim and self.covs.shape[-2] == self.dim
+        
+        def get_half_cov(cov):
+            U, S, _ = jnp.linalg.svd(cov)
+            return U @ jnp.diag(jnp.sqrt(S)) @ jnp.transpose(U)
 
-        for sigma in sigmas:
-            if sigma.ndim == 2:
-                assert sigma.shape[0] == sigma.shape[1]  # make sure sigma is a square matrix
-                # if sigma.shape[0] != 1, the covariance matrix is sigma.transpose * sigma
-                cov = jnp.matmul(sigma, jnp.transpose(sigma))
-                inv_cov = jnp.linalg.inv(cov)
-                det = jnp.linalg.det(cov)
-            else:
-                # sigma is a scalar
-                cov = sigma ** 2
-                inv_cov = 1. / cov
-                det = sigma ** (2 * self.dim)
 
-            self.covs.append(cov)
-            self.inv_covs.append(inv_cov)
-            self.dets.append(det)
-
-        self.mus = jnp.stack(self.mus)
-        self.covs = jnp.stack(self.covs)
-        self.inv_covs = jnp.stack(self.inv_covs)
-        self.dets = jnp.stack(self.dets)
+        self.inv_covs = jnp.stack([jnp.linalg.inv(cov) for cov in covs], axis=0)
+        self.half_covs = jnp.stack([get_half_cov(cov) for cov in covs], axis=0) 
+        self.dets_2pi = jnp.stack([jnp.linalg.det(cov * 2 * jnp.pi) for cov in covs], axis=0)
+        self.coefficients = -.5 * jnp.log(self.dets_2pi) + self.log_weights
 
     def sample(self, batch_size: int, key):
-        n_sample_per_center = []
-        remainder = batch_size % self.n_Gaussians
-        for i in range(self.n_Gaussians):
-            n_sample_i = batch_size // self.n_Gaussians
-            if remainder != 0:
-                n_sample_i += 1
-                remainder -= 1
-            n_sample_per_center.append(n_sample_i)
-
+        key_cat, key_gaussian = random.split(key, 2)
+        sample_index = random.categorical(key_cat, self.log_weights, shape=[batch_size])
+        _, n_sample_per_center = jnp.unique(sample_index, return_counts=True)
+        keys = jax.random.split(key_gaussian, self.n_Gaussians)
+        # return jnp.concatenate(sample_gaussians(n_sample_per_center, keys, self.mus, self.half_covs), axis=0)
         samples = []
-        keys = jax.random.split(key, self.n_Gaussians)
-        for i, (n_sample_i, _key) in enumerate(zip(n_sample_per_center, keys)):
-            mu, sigma = self.mus[i, :], self.sigmas[i]
-            if sigma.ndim == 1:
-                samples.append(sigma * random.normal(_key, (n_sample_i, self.dim)) + mu)
-            else:
-                samples.append(v_matmul(sigma, random.normal(_key, (n_sample_i, self.dim))) + mu)
+        # keys = jax.random.split(key_gaussian, self.n_Gaussians)
+        for i, (n_sample_i, _key) in enumerate(zip(n_sample_per_center.tolist(), keys)):
+            # mu, sigma = self.mus[i, :], self.sigmas[i]
+            # samples.append(v_matmul(sigma, random.normal(_key, (n_sample_i, self.dim))) + mu)
+            samples.append(sample_gaussians(n_sample_i, _key, self.mus[i], self.half_covs[i]))
 
         return jnp.concatenate(samples, axis=0)
 
     def logdensity(self, xs: jnp.ndarray):
-        return v_logdensity_gmm(xs, self.mus, self.inv_covs, self.dets)
+        return v_logdensity_gmm(xs, self.mus, self.inv_covs, self.coefficients)
 
     def score(self, xs: jnp.ndarray):
-        return v_score_gmm(xs, self.mus, self.inv_covs, self.dets)
+        return v_score_gmm(xs, self.mus, self.inv_covs, self.coefficients)
+
+
+def sample_gaussians(batch_size, key, mu, half_cov):
+    return v_matmul(half_cov, random.normal(key, (batch_size, mu.shape[0])) + mu)
+# sample_gaussians = jax.vmap(sample_gaussians, in_axes=[0, 0, 0, 0])     
 
 
 class Uniform(Distribution):
@@ -298,11 +300,17 @@ v_density_gaussian = jax.vmap(_density_gaussian, in_axes=[None, 0, 0, 0])
 # computes the density in several Gaussians of a single point
 
 
-def _logdensity_gmm(x, mus, inv_covs, dets):
-    # computes log densities of gmm of multiple points
-    densities = v_density_gaussian(x, mus, inv_covs, dets)
-    # densities : (self.n_Gaussians)
-    return jnp.log(jnp.mean(densities, axis=0))
+def get_quads(x, mu, inv_cov):
+    x_mu = x - mu
+    return x_mu @ (inv_cov @ x_mu) 
+get_quads = jax.vmap(get_quads, in_axes=[None, 0, 0])
+
+def _logdensity_gmm(x, mus, inv_covs, coefficients):
+    return jax.scipy.special.logsumexp(-.5 * get_quads(x, mus, inv_covs) + coefficients)
+    # # computes log densities of gmm of multiple points
+    # densities = v_density_gaussian(x, mus, inv_covs, dets)
+    # # densities : (self.n_Gaussians)
+    # return jnp.log(jnp.mean(densities, axis=0))
 
 
 v_logdensity_gmm = jax.vmap(_logdensity_gmm, in_axes=[0, None, None, None])

@@ -121,6 +121,5 @@ class JaxTrainer:
 
             # TODO: pretrain if necessary
             # TODO: save model
-            # TODO: adapt other equations
             # TODO: evaluate the metric, e.g. trend to equilibrium, flocking, Landau damping
 

@@ -71,3 +71,4 @@ class GMMPotential(Potential):
             return vg_gmm_V(x, self.mus, self.cov)
         else:
             raise ValueError("x should be either 1D (un-batched) or 2D (batched) array.")
+   
