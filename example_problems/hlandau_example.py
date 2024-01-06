@@ -5,13 +5,6 @@ import jax
 import jax.random as random
 from functools import partial
 
-# TODO:
-# 1. Define kernel
-# 2. Define ground truth
-# 3. Define gradient computation
-# 4. Define testing module
-
-
 def K(t):
     return 1. - jnp.exp(-t/8.)/2.
 

@@ -160,8 +160,7 @@ def plot_fn(forward_fn, pde_instance: EulerPoissonWithDrift, rng):
     plot_velocity(z_0T)
 
 
-def test_fn(forward_fn, time_interval, pde_instance: EulerPoissonWithDrift, rng):
-    # TODO: use time_interval in test module
+def test_fn(forward_fn, data, time_interval, pde_instance: EulerPoissonWithDrift, rng):
     x_ground_truth = pde_instance.test_data["x_T"]
     test_time_stamps = jnp.linspace(time_interval["current"][0], time_interval["current"][-1], 11)
     time_offset = time_interval["current"][-1] * len(time_interval["previous"])

@@ -37,15 +37,22 @@ def divergence_fn(f, _x: jnp.ndarray, _v=None):
     else:
         return batch_div_fn(f, _x, _v).mean(axis=0)
 
-def evolve_data_and_score(dynamics_fn, time_interval, data, score):
+def evolve_data_score_logprob(dynamics_fn, time_interval, data, score, logprob):
     states_0 = {
         "z": data,
     }
     if score is not None:
         states_0["xi"] = score 
     
+    if logprob is not None:
+        states_0["logprob"] = logprob
+    
     def ode_func1(states, t):
         bar_f_t_theta = lambda _x: dynamics_fn(t, _x)
+        
+        update = {"z": bar_f_t_theta(states["z"]), }
+
+        
         def h_t_theta(xi, z):
             div_bar_f_t_theta = lambda _z: divergence_fn(bar_f_t_theta, _z).sum(axis=0)
             grad_div_fn = grad(div_bar_f_t_theta)
@@ -53,17 +60,25 @@ def evolve_data_and_score(dynamics_fn, time_interval, data, score):
             _, vjp_fn = vjp(bar_f_t_theta, z)
             h2 = - vjp_fn(xi)[0]
             return h1 + h2
-        update = {"z": bar_f_t_theta(states["z"]), }
         if "xi" in states:
             update["xi"] = h_t_theta(states["xi"], states["z"])
+
+        def dlog_density_func(in_1):
+            # in_1 is x
+            div_bar_f_t_theta = lambda _x: divergence_fn(bar_f_t_theta, _x)
+            return -div_bar_f_t_theta(in_1)
+        if "logprob" in states:
+            update["logprob"] = dlog_density_func(states["z"])
 
         return update
 
     result_forward = odeint(ode_func1, states_0, time_interval, atol=1e-5, rtol=1e-5)
-    if score is not None:
-        return result_forward["z"][-1], result_forward["xi"][-1]
-    else:
-        return result_forward["z"][-1], None
+
+    data = result_forward["z"][-1]
+    score = result_forward["xi"][-1] if score is not None else None
+    logprob = result_forward["logprob"][-1] if logprob is not None else None
+
+    return data, score, logprob
 
 
 

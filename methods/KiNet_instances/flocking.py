@@ -136,7 +136,7 @@ def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_
         "grad norm": compute_pytree_norm(grad_T),
     }
 
-def test_fn(forward_fn, time_interval, pde_instance: Flocking, rng):
+def test_fn(forward_fn, data, time_interval, pde_instance: Flocking, rng):
     # use time_interval in testing module
     z_ground_truth = pde_instance.test_data["z_T"]
     acceleration_pred = forward_fn(jnp.ones(1) * pde_instance.total_evolving_time, z_ground_truth)

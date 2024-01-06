@@ -186,35 +186,29 @@ def value_and_grad_fn(forward_fn, params, time_interval, data, rng, config, pde_
 #     plot_velocity(z_0T)
 
 
-def test_fn(forward_fn, time_interval, pde_instance: KineticFokkerPlanck, rng):
-    # TODO: use time_interval in the testing module
+def test_fn(forward_fn, data, time_interval, pde_instance: KineticFokkerPlanck, rng):
+    time_offset = time_interval["current"][-1] * len(time_interval["previous"])
+    test_time_stamps = jnp.linspace(time_interval["current"][0], time_interval["current"][-1], 11)
     # compute the KL divergence and Fisher-information
     def bar_f(_z, _t):
-        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
+        dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn, time_offset=time_offset)
         return dynamics_fn(_t, _z)
 
-    init_data = pde_instance.distribution_0.sample(batch_size=1000, key=jax.random.PRNGKey(1))
-    test_time_stamps = pde_instance.test_data[0]
-
-    data_0 = init_data
-    log_density_0 = pde_instance.distribution_0.logdensity(init_data)
-    score_0 = pde_instance.distribution_0.score(init_data)
-    states_0 = [data_0, log_density_0, score_0]
+    states_0 = {
+        "z"         : data["data_initial"],
+        "score"     : data["score_initial"],
+        "logprob"   : data["logprob_initial"]
+    }
 
     def ode_func(states, t):
         bar_f_t_theta = lambda _x: bar_f(_x, t)
 
-        x = states[0]
-        dx = bar_f(x, t)
-
-        def dlog_density_func(in_1):
+        def dlog_density_fn(in_1):
             # in_1 is x
             div_bar_f_t_theta = lambda _x: divergence_fn(bar_f_t_theta, _x)
             return -div_bar_f_t_theta(in_1)
 
-        d_logdensity = dlog_density_func(x)
-
-        def dscore_func(in_1, in_2):
+        def dscore_fn(in_1, in_2):
             # in_1 is score
             # in_2 is x
             div_bar_f_t_theta = lambda _x: divergence_fn(bar_f_t_theta, _x).sum(axis=0)
@@ -224,19 +218,20 @@ def test_fn(forward_fn, time_interval, pde_instance: KineticFokkerPlanck, rng):
             h2 = - vjp_fn(in_1)[0]
             return h1 + h2
 
-        _score = states[2]
-        d_score = dscore_func(_score, x)
+        return {
+            "z"         : bar_f_t_theta(states["z"]),
+            "score"     : dscore_fn(states["score"], states["z"]),
+            "logprob"   : dlog_density_fn(states["z"])
 
-        return [dx, d_logdensity, d_score]
+        }
 
-    tspace = test_time_stamps
-    result_forward = odeint(ode_func, states_0, tspace, atol=1e-6, rtol=1e-6)
+    result_forward = odeint(ode_func, states_0, test_time_stamps, atol=1e-6, rtol=1e-6)
 
-    xs = result_forward[0]  # the first axis is time, the second axis is batch, the last axis is problem dimension
-    log_densities = result_forward[1]  # the first axis is time, the second axis is batch
-    scores = result_forward[2]  # the first axis is time, the second axis is batch, the last axis is problem dimension
+    xs = result_forward["z"]  # the first axis is time, the second axis is batch, the last axis is problem dimension
+    log_densities = result_forward["logprob"]  # the first axis is time, the second axis is batch
+    scores = result_forward["score"]  # the first axis is time, the second axis is batch, the last axis is problem dimension
 
-    scores_true, log_densities_true = pde_instance.ground_truth(test_time_stamps, xs)
+    scores_true, log_densities_true = pde_instance.ground_truth(test_time_stamps + time_offset, xs)
 
     KL = jnp.mean(log_densities - log_densities_true, axis=(0, 1))
     Fisher_information = jnp.mean(jnp.sum((scores - scores_true) ** 2, axis=-1), axis=(0, 1))

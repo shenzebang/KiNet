@@ -15,7 +15,7 @@ import warnings
 class ProblemInstance:
     def __init__(self, cfg, rng):
         self.cfg = cfg
-        self.instance_name = f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"
+        self.instance_name = cfg.pde_instance.name
         self.dim = cfg.pde_instance.domain_dim
         self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time

@@ -150,26 +150,18 @@ class KineticFokkerPlanck(ProblemInstance):
 
         self.distribution_t = Uniform(jnp.zeros(1), jnp.ones(1) * cfg.pde_instance.total_evolving_time)
         self.distribution_domain = Uniform(self.mins, self.maxs)
-        self.log_prob_0 = distribution_0.logdensity
+        self.logprob_0 = distribution_0.logdensity
         self.score_0 = distribution_0.score
         self.density_0 = distribution_0.density
 
-        # Test data
-        if self.cfg.pde_instance.perform_test:
-            self.test_data = prepare_test_data(self.initial_configuration, self.total_evolving_time, self.beta, self.Gamma)
 
     def ground_truth(self, ts: jnp.ndarray, xs: jnp.ndarray):
-        # TODO: revise the implementation of the ground truth fn for FPE to accept any testing time.
-        _, mus, Sigmas = self.test_data
+        assert xs.ndim == 2 or xs.ndim == 3
 
-        if xs.ndim == 3:
-            v_v_gaussian_score = jax.vmap(v_gaussian_score, in_axes=[0, 0, 0])
-            v_v_gaussian_log_density = jax.vmap(v_gaussian_log_density, in_axes=[0, 0, 0])
-        elif xs.ndim == 2:
-            v_v_gaussian_score = jax.vmap(v_gaussian_score, in_axes=[None, 0, 0])
-            v_v_gaussian_log_density = jax.vmap(v_gaussian_log_density, in_axes=[None, 0, 0])
-        else:
-            raise NotImplementedError
+        mus, Sigmas = Kinetic_OU_process(ts, self.initial_configuration, self.beta, self.Gamma)
+        in_axes = [0, 0, 0] if xs.ndim == 3 else [None, 0, 0]
+        v_v_gaussian_score, v_v_gaussian_log_density \
+            = jax.vmap(v_gaussian_score, in_axes=in_axes), jax.vmap(v_gaussian_log_density, in_axes=in_axes)
 
         scores_true = v_v_gaussian_score(xs, Sigmas, mus)
         log_densities_true = v_v_gaussian_log_density(xs, Sigmas, mus)

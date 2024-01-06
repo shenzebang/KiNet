@@ -192,7 +192,7 @@ def value_and_grad_fn(forward_fn, params, time_interval, data, rng, config, pde_
             }
 
 
-def test_fn(forward_fn, time_interval, pde_instance: HomogeneousLandau, rng):
+def test_fn(forward_fn, data, time_interval, pde_instance: HomogeneousLandau, rng):
     x_ground_truth = pde_instance.test_data["x_T"]
     # test_time_stamps = jnp.linspace(0, pde_instance.total_evolving_time, 11)
     # test_time_stamps = 

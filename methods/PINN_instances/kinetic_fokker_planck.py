@@ -179,7 +179,7 @@ class MLPKFPE(nn.Module):
         self.time_embedding_dim = self.pde_instance.cfg.neural_network.time_embedding_dim
         self.hidden_dims = [self.pde_instance.cfg.neural_network.hidden_dim] * self.pde_instance.cfg.neural_network.layers
         # self.u = MLP(output_dim=1, time_embedding_dim=self.time_embedding_dim, hidden_dims=self.hidden_dims)
-        self.u = create_normalizing_flow_fn(self.pde_instance.log_prob_0, dim=self.pde_instance.dim * 2) # 2d for Kinetic problems
+        self.u = create_normalizing_flow_fn(self.pde_instance.logprob_0, dim=self.pde_instance.dim * 2) # 2d for Kinetic problems
 
     def __call__(self, t: jnp.ndarray, x: jnp.ndarray):
         if t.ndim == 1 and len(t) == 1:
