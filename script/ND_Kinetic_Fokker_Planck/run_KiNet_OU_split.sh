@@ -1,7 +1,7 @@
 CUDA_VISIBLE_DEVICES=0 \
 python main.py \
     pde_instance=nd_fokker_planck_OU \
-    pde_instance.domain_dim=10 \
+    pde_instance.domain_dim=20 \
     train.optimizer.weight_decay=0 \
     solver.train.batch_size_ref=0 \
     neural_network.hidden_dim=256 \
@@ -18,5 +18,6 @@ python main.py \
     train.pretrain=True \
     pde_instance.total_evolving_time=10 \
     train.number_of_time_shard=20 \
-    train.number_of_iterations=20000
+    train.number_of_iterations=20000 \
+    test.batch_size=10000
     # train.optimizer.grad_clipping.type=global

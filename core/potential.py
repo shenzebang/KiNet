@@ -2,6 +2,8 @@ import jax.numpy as jnp
 import jax
 from utils.common_utils import v_matmul
 import warnings
+from typing import List
+from core.distribution import GaussianMixtureModel
 
 class Potential(object):
     def gradient(self, x: jnp.DeviceArray):
@@ -46,29 +48,37 @@ g_gmm_V = jax.grad(gmm_V) # by default, grad computes gradient w.r.t. the first 
 vg_gmm_V = jax.vmap(g_gmm_V, in_axes=[0, None, None]) # only apply autobatching to the first input
 
 class GMMPotential(Potential):
-    def __init__(self, mus: jnp.ndarray, cov: jnp.ndarray):
-        # we assume that the Gaussian component has the same cov for simplicity
-        assert mus.ndim == 2
-        self.n_Gaussian = mus.shape[0]
-        self.dim = mus.shape[-1]
-        self.mus = mus
+    # def __init__(self, mus: jnp.ndarray, covs: jnp.ndarray, weights: jnp.ndarray):
+    #     # we assume that the Gaussian component has the same cov for simplicity
+    #     assert mus.ndim == 2
+    #     self.n_Gaussian = mus.shape[0]
+    #     self.dim = mus.shape[-1]
+    #     self.mus = mus
 
-        if cov.ndim == 0:
-            self.cov = cov
-        elif cov.ndim == 1 and len(cov) == 1:
-            self.cov = cov[0]
-        else:
-            raise ValueError("sigma should be a scalar!")
-        
+    #     if covs.ndim == 0:
+    #         self.cov = covs
+    #     elif covs.ndim == 1 and len(covs) == 1:
+    #         self.cov = covs[0]
+    #     else:
+    #         raise ValueError("sigma should be a scalar!")
+
+    # def gradient(self, x):
+    #     assert x.ndim == 1 or x.ndim == 2
+    #     assert x.shape[-1] == self.dim
+
+    #     if len(x.shape) == 1:
+    #         return g_gmm_V(x, self.mus, self.cov)
+    #     elif len(x.shape) == 2:
+    #         return vg_gmm_V(x, self.mus, self.cov)
+    #     else:
+    #         raise ValueError("x should be either 1D (un-batched) or 2D (batched) array.")
+    
+    def __init__(self, mus: List[jnp.ndarray], covs: List[jnp.ndarray], weights: jnp.ndarray):
+        warnings.warn("Only Identity covariance matrix is supported!")
+
+        self.gmm = GaussianMixtureModel(mus, covs, weights)        
 
     def gradient(self, x):
-        assert x.ndim == 1 or x.ndim == 2
-        assert x.shape[-1] == self.dim
-
-        if len(x.shape) == 1:
-            return g_gmm_V(x, self.mus, self.cov)
-        elif len(x.shape) == 2:
-            return vg_gmm_V(x, self.mus, self.cov)
-        else:
-            raise ValueError("x should be either 1D (un-batched) or 2D (batched) array.")
+        # (why we need the negative sign) \nabla log rho_\infty = - \nabla V, so \nabla V = - \nabla log rho_\infty
+        return - self.gmm.score(x)
    

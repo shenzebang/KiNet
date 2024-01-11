@@ -86,3 +86,6 @@ class Method:
 
     def create_model_fn(self) -> (nn.Module, Dict):
         raise NotImplementedError
+
+    def metric_fn(self, forward_fn, params, time_interval, rng):
+        pass

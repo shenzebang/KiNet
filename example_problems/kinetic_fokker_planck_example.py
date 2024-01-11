@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from core.distribution import Gaussian, Uniform
+from core.distribution import Gaussian, Uniform, Distribution, GaussianMixtureModel, DistributionKinetic
 import jax
 from jax.experimental.ode import odeint
 from api import ProblemInstance
@@ -87,8 +87,29 @@ def initialize_configuration(domain_dim: int, beta):
         "Sigma_x_inf": jnp.eye(domain_dim) / beta,
         "mu_x_inf": jnp.zeros(domain_dim),
         # for GMM
-        "cov_GMM": jnp.ones([]) * 1, 
+        "covs_GMM": jnp.ones([]) * 1, 
         "mus_GMM": jnp.stack([jnp.array([-2., -2.]), jnp.array([-2., 2.]), jnp.array([2., -2.]), jnp.array([2., 2.])], axis=0),
+        "weights_GMM": jnp.array([.25, .25, .25, .25]),
+        "GMM": {
+            "mus": [jnp.array([2, 2]), jnp.array([-2, 2]), jnp.array([-2, -2]), jnp.array([2, -2]), jnp.array([0, 0])],
+            "covs": [jnp.array([[1, 0], [0, 1]]),
+                     jnp.array([[1, 0], [0, 1]]),
+                     jnp.array([[1, 0], [0, 1]]),
+                     jnp.array([[1, 0], [0, 1]]),
+                     jnp.array([[1, 0], [0, 1]]),
+                     ],
+            "weights": jnp.ones([5])/5,
+        }
+        # # TODO: define this for any dimension.
+        # "covs_GMM": [jnp.array([[1, 0], [0, 1]]),
+        #              jnp.array([[1, 0], [0, 1]]),
+        #              jnp.array([[1, 0], [0, 1]]),
+        #              jnp.array([[1, 0], [0, 1]]),
+        #              jnp.array([[1, 0], [0, 1]]),
+        #              ],
+        # "mus_GMM": [jnp.array([2, 2]), jnp.array([-2, 2]), jnp.array([-2, -2]), jnp.array([2, -2]), jnp.array([0, 0])],
+        # # "weights_GMM": jnp.array([.25, .25, .25, .25]),
+        # "weights_GMM": jnp.ones([5])/5,
     }
 
 def get_distribution_t(t, configuration, beta, Gamma):
@@ -103,7 +124,8 @@ def get_potential(potential_type, configuration):
     if potential_type == "OU":
         return QuadraticPotential(configuration["mu_x_inf"], configuration["Sigma_x_inf"])
     elif potential_type == "GMM":
-        return GMMPotential(mus=configuration["mus_GMM"], cov=configuration["cov_GMM"])
+        # return GMMPotential(mus=configuration["mus_GMM"], covs=configuration["covs_GMM"], weights=configuration["weights_GMM"])
+        return GMMPotential(mus=configuration["GMM"]["mus"], covs=configuration["GMM"]["covs"], weights=configuration["GMM"]["weights"])
     else:
         raise ValueError("Unknown potential")
 
@@ -116,6 +138,18 @@ def prepare_test_data(configuration, total_evolving_time, beta, Gamma):
 
     return test_data
 
+def prepare_equilibrium(configuration, beta, Gamma, potential_type) -> Distribution:
+    if potential_type == "OU":
+        pass
+        # raise NotImplementedError
+    elif potential_type == "GMM":
+        # TODO: need a more general implementation for beta != 2
+        distribution_x = GaussianMixtureModel(mus=configuration["GMM"]["mus"], covs=configuration["GMM"]["covs"], weights=configuration["GMM"]["weights"])
+        distribution_v = Gaussian(mu=jnp.zeros([2]), cov=jnp.eye(2))
+        return DistributionKinetic(distribution_x, distribution_v)
+    else:
+        raise ValueError("Unknown potential type!")
+
 class KineticFokkerPlanck(ProblemInstance):
     def __init__(self, cfg, rng):
         super().__init__(cfg, rng)
@@ -126,6 +160,9 @@ class KineticFokkerPlanck(ProblemInstance):
         self.Gamma = 2 * jnp.sqrt(self.beta)
         self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta)
         self.target_potential = get_potential(self.cfg.pde_instance.potential, self.initial_configuration)
+
+        # Equilibrium distribution
+        self.equilibrium = prepare_equilibrium(self.initial_configuration, self.beta, self.Gamma, cfg.pde_instance.potential)
 
         # Analytical solution
         distribution_0 = get_distribution_t(jnp.zeros([]), self.initial_configuration, self.beta, self.Gamma)

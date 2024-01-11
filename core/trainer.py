@@ -44,7 +44,7 @@ class JaxTrainer:
                 return v_g_etc
         else:
             value_and_grad_fn = jax.jit(_value_and_grad_fn)
-            # value_and_grad_fn_efficient = value_and_grad_fn
+            # value_and_grad_fn = _value_and_grad_fn
 
         @jax.jit
         def step_fn(params, opt_state, grad):
@@ -74,6 +74,10 @@ class JaxTrainer:
         def plot_fn(params, time_interval, rng):
             return self.method.plot_fn(self.forward_fn, params, time_interval, rng)
         
+        @jax.jit
+        def metric_fn(params, time_interval, rng):
+            return self.method.metric_fn(self.forward_fn, params, time_interval, rng)
+
         minimum_loss_collection = []
         rngs_shard = jax.random.split(self.rng, self.cfg.train.number_of_time_shard)
         for shard_id, rng_shard in enumerate(rngs_shard):
@@ -83,10 +87,12 @@ class JaxTrainer:
             self.time_interval["current"] = jnp.array([0, self.time_per_shard])
             # initialize the opt_state
             opt_state = self.optimizer.init(self.params["current"])
+            rng_shard, rng_plot, rng_metric = jax.random.split(rng_shard, 3)
             rngs = jax.random.split(rng_shard, self.cfg.train.number_of_iterations)
             for epoch in range(self.cfg.train.number_of_iterations):
+                # print(epoch)
                 rng = rngs[epoch]
-                rng_train, rng_test, rng_plot = random.split(rng, 3)
+                rng_train, rng_test = random.split(rng, 2)
 
                 v_g_etc = value_and_grad_fn(self.params, self.time_interval, rng_train)
                 self.params["current"], opt_state = step_fn(self.params["current"], opt_state, v_g_etc["grad"])
@@ -118,8 +124,10 @@ class JaxTrainer:
             self.params["current"] = copy.deepcopy(best_model_shard_id)
 
             plot_fn(self.params, self.time_interval, rng_plot) 
+            # evaluate metric, e.g. trend to equilibrium, flocking, Landau damping
+            if self.cfg.pde_instance.test_metric:
+                metric = metric_fn(self.params, self.time_interval, rng_metric)
+                print(metric)
 
-            # TODO: pretrain if necessary
             # TODO: save model
-            # TODO: evaluate the metric, e.g. trend to equilibrium, flocking, Landau damping
 

@@ -155,36 +155,13 @@ def value_and_grad_fn(forward_fn, params, time_interval, data, rng, config, pde_
         "ODE error x": jnp.mean(jnp.sum((result_backward["z"][-1] - states_0["z"]) ** 2, axis=-1)),
     }
 
+def distance_to_equilibrium(data, pde_instance: KineticFokkerPlanck, rng):
+    # compute the KL divergence between the latest variable distribution and the equilibrium
+    score_true, logprob_true = pde_instance.equilibrium.score(data["data_initial"]), pde_instance.equilibrium.logdensity(data["data_initial"])
+    KL = jnp.mean(data["logprob_initial"] - logprob_true)
+    Fisher_information = jnp.mean(jnp.sum((data["score_initial"] - score_true) ** 2, axis=-1))
 
-
-# def plot_fn(forward_fn, config, pde_instance: KineticFokkerPlanck, rng):
-#     T = pde_instance.total_evolving_time
-#
-#     mins = pde_instance.mins
-#     maxs = pde_instance.maxs
-#     # Define the dynamics
-#
-#     def bar_f(_z, _t):
-#         dynamics_fn = pde_instance.forward_fn_to_dynamics(forward_fn)
-#         return dynamics_fn(_t, _z)
-#
-#     # sample initial data
-#     z_0 = pde_instance.distribution_0.sample(batch_size=1000, key=jax.random.PRNGKey(1))
-#     states_0 = [z_0]
-#
-#     def ode_func1(states, t):
-#         z = states[0]
-#         dz = bar_f(z, t)
-#         return [dz]
-#
-#     tspace = jnp.linspace(0, T, num=200)
-#     result_forward = odeint(ode_func1, states_0, tspace, atol=1e-6, rtol=1e-6)
-#     z_0T = result_forward[0]
-#     # x_0T, v_0T = jnp.split(z_0T, indices_or_sections=2, axis=-1)
-#
-#     # plot_scatter_2d(x_0T, mins, maxs)
-#     plot_velocity(z_0T)
-
+    return {"KL": KL, "Fisher Information": Fisher_information}
 
 def test_fn(forward_fn, data, time_interval, pde_instance: KineticFokkerPlanck, rng):
     time_offset = time_interval["current"][-1] * len(time_interval["previous"])

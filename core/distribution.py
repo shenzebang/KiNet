@@ -127,6 +127,7 @@ class GaussianMixtureModel(Distribution):
     def __init__(self, mus: List[jnp.ndarray], covs: List[jnp.ndarray], weights: jnp.ndarray | None = None):
         self.n_Gaussians = len(mus)
         assert self.n_Gaussians == len(covs)
+        warnings.warn("covs is a deprecated input. It is always taken as identity!")
 
         # check weights
         if weights == None:
@@ -302,7 +303,10 @@ v_density_gaussian = jax.vmap(_density_gaussian, in_axes=[None, 0, 0, 0])
 
 def get_quads(x, mu, inv_cov):
     x_mu = x - mu
-    return x_mu @ (inv_cov @ x_mu) 
+    # return jnp.dot(x_mu, jnp.matmul(inv_cov, x_mu))
+    # return x_mu.dot(inv_cov).dot(x_mu)
+    return jnp.sum(x_mu ** 2, axis=-1)
+
 get_quads = jax.vmap(get_quads, in_axes=[None, 0, 0])
 
 def _logdensity_gmm(x, mus, inv_covs, coefficients):

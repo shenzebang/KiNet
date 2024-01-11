@@ -7,6 +7,7 @@ from functools import partial
 import jax.random as random
 from utils.common_utils import evolve_data_score_logprob
 import jax.numpy as jnp
+import jax
 INSTANCES = {
     'Kinetic-Fokker-Planck'  : kinetic_fokker_planck,
     'Euler-Poisson'          : euler_poisson,
@@ -97,6 +98,7 @@ class KiNet(Method):
         data["weight_initial"] = get_weight(data["data_initial"]) 
         data["weight_ref"] = get_weight(data["data_ref"])
 
+        # @jax.jit
         def preprocess_data_and_score(data, score, logprob):
             # preprocess the data and score based on the params in params_collection
             time_offset = jnp.zeros([])
@@ -113,3 +115,15 @@ class KiNet(Method):
 
 
         return data
+    
+    def metric_fn(self, forward_fn, params, time_interval, rng):
+        # decide the metric based on figuration
+        if self.cfg.pde_instance.metric == "trend-to-equilibrium":
+            data = self.sample_data(rng, forward_fn, params["previous"], time_interval["previous"],
+                            batch_size=self.cfg.test.batch_size,
+                            batch_size_ref=0,
+                            evolve_score=True,
+                            evolve_logprob=True,)
+            return INSTANCES[self.pde_instance.instance_name].distance_to_equilibrium(data, self.pde_instance, None)
+        else:
+            raise ValueError("unknown metric!")

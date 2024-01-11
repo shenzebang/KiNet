@@ -14,3 +14,5 @@ test:
   evolve_data: !!bool True
   evolve_score: !!bool True
   evolve_logprob: !!bool True
+test_metric: !!bool True
+metric: !!str trend-to-equilibrium
