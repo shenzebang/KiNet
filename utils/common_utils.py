@@ -118,3 +118,13 @@ def volume_nd_ball(d: int):
 def compute_pytree_norm(pytree):
     pytree_norm = jnp.sqrt(sum(jnp.vdot(g, g) for g in jax.tree_util.tree_leaves(pytree)))
     return pytree_norm
+
+def estimate_momentum(XV: jnp.ndarray):
+        assert XV.ndim == 2 and XV.shape[-1] >= 2
+        X, V = jnp.split(XV, indices_or_sections=2, axis=-1)
+        return jnp.mean(V, axis=0)
+    
+def estimate_energy(XV: jnp.ndarray):
+    assert XV.ndim == 2 and XV.shape[-1] >= 2
+    X, V = jnp.split(XV, indices_or_sections=2, axis=-1)
+    return jnp.mean(jnp.sum(V**2, axis=-1), axis=0)

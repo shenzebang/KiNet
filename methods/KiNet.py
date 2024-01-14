@@ -18,17 +18,10 @@ INSTANCES = {
 
 class KiNet(Method):
     def create_model_fn(self):
-        # if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
-            # return kinetic_fokker_planck.create_model_fn(self.pde_instance)
-        # elif "Landau" in self.pde_instance.instance_name:
-            # return hlandau.create_model_fn(self.pde_instance)
-        # else:
         return INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
-        # net, params = INSTANCES[self.pde_instance.instance_name].create_model_fn(self.pde_instance)
-        # return net, params
-
 
     def test_fn(self, forward_fn, params, time_interval, rng):
+        data = None
         if self.cfg.pde_instance.test.evolve_data:
             rng, rng_data = random.split(rng, 2)
             data = self.sample_data(rng_data, forward_fn, params["previous"], time_interval["previous"],
@@ -36,18 +29,8 @@ class KiNet(Method):
                                     batch_size_ref=0,
                                     evolve_score=self.cfg.pde_instance.test.evolve_score,
                                     evolve_logprob=self.cfg.pde_instance.test.evolve_logprob)
-        else:
-            data = None
 
-        # TODO: select test_fn based on tasks
         forward_fn = partial(forward_fn, params["current"])
-        # if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
-        #     return kinetic_fokker_planck.test_fn(forward_fn=forward_fn, data=data, time_interval=time_interval, pde_instance=self.pde_instance,
-        #                                         rng=rng)
-        # elif "Landau" in self.pde_instance.instance_name:
-        #     return hlandau.test_fn(forward_fn=forward_fn, data=data, time_interval=time_interval, pde_instance=self.pde_instance,
-        #                                         rng=rng)
-        # else:
         return INSTANCES[self.pde_instance.instance_name].test_fn(forward_fn=forward_fn, 
                                                                   data=data, time_interval=time_interval, 
                                                                   pde_instance=self.pde_instance, rng=rng
@@ -65,13 +48,6 @@ class KiNet(Method):
         config_train = {
             "ODE_tolerance" : self.cfg.ODE_tolerance,
         }
-        # if "Kinetic-Fokker-Planck" in self.pde_instance.instance_name:
-        #     return kinetic_fokker_planck.value_and_grad_fn(forward_fn=forward_fn, params=params["current"], data=data, time_interval=time_interval, 
-        #                                                    rng=rng_vg, config=config_train, pde_instance=self.pde_instance)
-        # elif "Landau" in self.pde_instance.instance_name:
-        #     return hlandau.value_and_grad_fn(forward_fn=forward_fn, params=params["current"], data=data, time_interval=time_interval, rng=rng_vg,
-        #                                                   config=config_train, pde_instance=self.pde_instance)
-        # else:
         return INSTANCES[self.pde_instance.instance_name].value_and_grad_fn(forward_fn=forward_fn, params=params["current"], 
                                                                             data=data, time_interval=time_interval, rng=rng_vg, 
                                                                             config=config_train, pde_instance=self.pde_instance
@@ -125,5 +101,12 @@ class KiNet(Method):
                             evolve_score=True,
                             evolve_logprob=True,)
             return INSTANCES[self.pde_instance.instance_name].distance_to_equilibrium(data, self.pde_instance, None)
+        elif self.cfg.pde_instance.metric == "functional-decay":
+            data = self.sample_data(rng, forward_fn, params["previous"], time_interval["previous"],
+                            batch_size=self.cfg.test.batch_size,
+                            batch_size_ref=0,
+                            evolve_score=False,
+                            evolve_logprob=False,)
+            return INSTANCES[self.pde_instance.instance_name].functional_decay_fn(data, self.pde_instance, None)
         else:
             raise ValueError("unknown metric!")

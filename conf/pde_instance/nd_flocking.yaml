@@ -5,6 +5,8 @@ boundary_condition: !!str None
 diffusion_coefficient: !!float 0
 total_evolving_time: !!float 2
 name: !!str Flocking
+beta: !!float .2
+with_drift: !!bool False
 perform_test: !!bool True
 train:
   evolve_score: !!bool False
@@ -13,5 +15,5 @@ test:
   evolve_data: !!bool False
   evolve_score: !!bool False
   evolve_logprob: !!bool False
-test_metric: !!bool False
-metric: !!str trend-to-equilibrium
+test_metric: !!bool True
+metric: !!str functional-decay

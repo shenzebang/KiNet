@@ -2,13 +2,11 @@ import jax
 from jax.tree_util import tree_flatten, tree_unflatten
 from jax import grad, vjp
 import jax.numpy as jnp
-from utils.common_utils import compute_pytree_norm
+from utils.common_utils import compute_pytree_norm, estimate_energy, estimate_momentum
 from jax.experimental.ode import odeint
 from example_problems.flocking_example import Flocking, conv_fn_vmap
 from core.model import get_model
 import jax.random as random
-
-
 
 
 def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_instance: Flocking):
@@ -29,12 +27,6 @@ def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_
         forward_fn_params = lambda t, z: forward_fn(_params, t, z)
         dynamics = pde_instance.forward_fn_to_dynamics(forward_fn_params, time_offset)
         return dynamics(_t, _z)
-    # def bar_f(_z, _t, _params):
-    #     x, v = jnp.split(_z, indices_or_sections=2, axis=-1)
-    #     dx = v
-    #     dv = forward_fn(_params, _t, _z)
-    #     dz = jnp.concatenate([dx, dv], axis=-1)
-    #     return dz
 
     def f_fn(_z, _t, _params):
         dv_pred = forward_fn(_params, _t, _z)
@@ -54,7 +46,7 @@ def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_
         def g_t(_z):
             z_train, z_ref = jnp.split(_z, [n_train], axis=0)
             acceleration = f_fn(z_train, t, params)
-            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref)) ** 2, axis=(1,)))
+            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref, pde_instance.beta)) ** 2, axis=(1,)))
 
         dloss = g_t(z)
 
@@ -95,7 +87,7 @@ def value_and_grad_fn(forward_fn, params, data, time_interval, rng, config, pde_
         def g_t(_z, _params):
             z_train, z_ref = jnp.split(_z, [n_train], axis=0)
             acceleration = f_t(z_train, _params)
-            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref)) ** 2, axis=-1))
+            return jnp.mean(jnp.sum((acceleration - conv_fn_vmap(z_train, z_ref, pde_instance.beta)) ** 2, axis=-1))
 
         dxg = grad(g_t, argnums=0)
         dthetag = grad(g_t, argnums=1)
@@ -151,3 +143,9 @@ def create_model_fn(pde_instance: Flocking):
     params = net.init(random.PRNGKey(11), jnp.zeros(1), pde_instance.distribution_0.sample(1, random.PRNGKey(1)))
     return net, params
 
+def functional_decay_fn(data, pde_instance: Flocking, rng):
+    assert pde_instance.preserve_momentum
+    m_t = estimate_momentum(data["data_initial"])
+    energy = estimate_energy(data["data_initial"])
+    return {"Lyapunov functional": energy - 2 * jnp.sum(m_t*pde_instance.m_0) + jnp.sum(pde_instance.m_0 ** 2), 
+            "momentum preservation: ": jnp.sqrt(jnp.sum((m_t - pde_instance.m_0)**2, axis=-1))}
