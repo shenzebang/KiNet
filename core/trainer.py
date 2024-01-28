@@ -2,11 +2,14 @@ import optax
 import wandb
 import jax
 import jax.numpy as jnp
-from utils.common_utils import compute_pytree_norm
+from utils.common_utils import compute_pytree_norm, normalize_grad
 from api import Method
 import jax.random as random
 from optax import GradientTransformation
 import copy
+from flax.training import orbax_utils
+import orbax.checkpoint
+from utils.logging_utils import get_checkpoint_directory_from_cfg
 
 class JaxTrainer:
     def __init__(self,
@@ -26,8 +29,15 @@ class JaxTrainer:
         self.params = {"current": copy.deepcopy(params), "previous": []}
         self.time_per_shard = self.cfg.pde_instance.total_evolving_time / self.cfg.train.number_of_time_shard
         self.time_interval = {"current": jnp.array([0, self.time_per_shard]), "previous": []}
+        self.checkpoint_directory = get_checkpoint_directory_from_cfg(self.cfg)
 
     def fit(self, ):
+        orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=1, create=True)
+        checkpoint_manager = orbax.checkpoint.CheckpointManager(self.checkpoint_directory, orbax_checkpointer, options)
+
+
+
         # jit or pmap the gradient computation for efficiency
         def _value_and_grad_fn(params, time_interval, rng):
             return self.method.value_and_grad_fn(self.forward_fn, params, time_interval, rng)
@@ -77,25 +87,44 @@ class JaxTrainer:
         @jax.jit
         def metric_fn(params, time_interval, rng):
             return self.method.metric_fn(self.forward_fn, params, time_interval, rng)
+        
+        def test_metric_and_log_fn(params, time_interval, rng, shard_id):
+            metrics = metric_fn(params, time_interval, rng)
+            log_dict_metric = {"metric/step": (shard_id+1) * self.time_per_shard}
+            for key in metrics:
+                log_dict_metric[f"metric/{key}"] = metrics[key]
+            wandb.log(log_dict_metric)
 
         minimum_loss_collection = []
-        rngs_shard = jax.random.split(self.rng, self.cfg.train.number_of_time_shard)
+        rng_metri_0, rng_0 = jax.random.split(self.rng)
+        rngs_shard = jax.random.split(rng_0, self.cfg.train.number_of_time_shard)
+        wandb.define_metric("metric/step")
+        wandb.define_metric("metric/*", step_metric="metric/step")
+        if self.cfg.pde_instance.test_metric:
+            test_metric_and_log_fn(self.params, self.time_interval, rng_metri_0, shard_id=-1)
+            
+        opt_state = self.optimizer.init(self.params["current"])
         for shard_id, rng_shard in enumerate(rngs_shard):
             minimum_loss = jnp.inf
             best_model_shard_id = self.params["current"]
             # self.time_interval["current"] = jnp.array([shard_id * self.time_per_shard, (shard_id+1) * self.time_per_shard])
             self.time_interval["current"] = jnp.array([0, self.time_per_shard])
             # initialize the opt_state
-            opt_state = self.optimizer.init(self.params["current"])
+            # opt_state = self.optimizer.init(self.params["current"])
             rng_shard, rng_plot, rng_metric = jax.random.split(rng_shard, 3)
             rngs = jax.random.split(rng_shard, self.cfg.train.number_of_iterations)
+
+            # logging related
+            wandb.define_metric(f"shard {shard_id}/step")
+            wandb.define_metric(f"shard {shard_id}/*", step_metric=f"shard {shard_id}/step")
             for epoch in range(self.cfg.train.number_of_iterations):
                 # print(epoch)
                 rng = rngs[epoch]
                 rng_train, rng_test = random.split(rng, 2)
 
                 v_g_etc = value_and_grad_fn(self.params, self.time_interval, rng_train)
-                self.params["current"], opt_state = step_fn(self.params["current"], opt_state, v_g_etc["grad"])
+                grad = normalize_grad(v_g_etc["grad"], v_g_etc["grad norm"]) if self.cfg.train.normalize_grad else v_g_etc["grad"]
+                self.params["current"], opt_state = step_fn(self.params["current"], opt_state, grad)
                 if v_g_etc["loss"] < minimum_loss:
                     best_model_shard_id = self.params["current"]
                     minimum_loss = v_g_etc["loss"]
@@ -104,10 +133,15 @@ class JaxTrainer:
                 params_norm = compute_pytree_norm(self.params["current"])
                 v_g_etc["params_norm"] = params_norm
 
-                wandb.log({f"shard {shard_id}": v_g_etc}, step=epoch + shard_id * self.cfg.train.number_of_iterations)
+                log_dict_epoch ={
+                    f"shard {shard_id}/step": epoch,
+                }
+                for key in v_g_etc:
+                    log_dict_epoch[f"shard {shard_id}/{key}"] = v_g_etc[key]
                 if self.cfg.pde_instance.perform_test and (epoch % self.cfg.test.frequency == 0 or epoch >= self.cfg.train.number_of_iterations - 3):
                     result_epoch = test_fn(self.params, self.time_interval, rng_test)
-                    wandb.log({f"shard {shard_id}": result_epoch}, step=epoch + shard_id * self.cfg.train.number_of_iterations)
+                    for key in result_epoch:
+                        log_dict_epoch[f"shard {shard_id}/{key}"] = result_epoch[key]
                     if self.cfg.test.verbose:
                         msg = f"In epoch {epoch + 1: 5d}, "
                         for key in v_g_etc:
@@ -115,7 +149,7 @@ class JaxTrainer:
                         for key in result_epoch:
                             msg = msg + f"{key} is {result_epoch[key]: .3e}, "
                         print(msg)
-                # if (epoch + 1) % self.cfg.plot.frequency == 0 and self.method.plot_fn is not None: plot(self.params, rng_plot)
+                wandb.log(log_dict_epoch)
 
             minimum_loss_collection.append(minimum_loss)
             # store the params for a specific time shard
@@ -123,11 +157,16 @@ class JaxTrainer:
             self.time_interval["previous"].append(copy.deepcopy(self.time_interval["current"]))
             self.params["current"] = copy.deepcopy(best_model_shard_id)
 
+            # save checkpoint
+            ckpt = {"model": self.params, "time_interval": self.time_interval, "cfg": self.cfg}
+            save_args = orbax_utils.save_args_from_target(ckpt)
+            checkpoint_manager.save(shard_id, ckpt, save_kwargs={'save_args': save_args})
+            checkpoint_manager.wait_until_finished()
+            
             plot_fn(self.params, self.time_interval, rng_plot) 
             # evaluate metric, e.g. trend to equilibrium, flocking, Landau damping
             if self.cfg.pde_instance.test_metric:
-                metric = metric_fn(self.params, self.time_interval, rng_metric)
-                print(metric)
-
-            # TODO: save model
+                test_metric_and_log_fn(self.params, self.time_interval, rng_metric, shard_id)
+            
+            # TODO: record the testing error of the saved model (the best model)            
 

@@ -26,6 +26,7 @@ train:
   number_of_iterations: 80000
   batch_size: 64
   number_of_time_shard: !!int 1
+  normalize_grad: !!bool False
   optimizer:
     method: SGD
     momentum: 0.9
