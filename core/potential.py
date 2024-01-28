@@ -6,7 +6,7 @@ from typing import List
 from core.distribution import GaussianMixtureModel
 
 class Potential(object):
-    def gradient(self, x: jnp.DeviceArray):
+    def gradient(self, x: jnp.ndarray):
         raise NotImplementedError
 
 
@@ -27,7 +27,7 @@ class QuadraticPotential(Potential):
 
 
 class VoidPotential(Potential):
-    def gradient(self, x: jnp.DeviceArray):
+    def gradient(self, x: jnp.ndarray):
         return jnp.zeros_like(x)
 
 
