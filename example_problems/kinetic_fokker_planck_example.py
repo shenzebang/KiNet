@@ -72,44 +72,40 @@ def Kinetic_OU_process(t: jnp.ndarray, configuration, beta, Gamma):
 #     return mus_closed_form, Sigmas_closed_form
 
 
-def initialize_configuration(domain_dim: int, beta):
+def initialize_configuration(domain_dim: int, beta, rng):
+    # TODO: generate GMM centroid randomly
     Sigma_x_0_scale = 1.
     Sigma_v_0_scale = 1.
+    number_of_centers_GMM = 3
+    rngs = jax.random.split(rng, number_of_centers_GMM)
+    GMM_mean_min = -4
+    GMM_mean_max = 4
     return {
+        "domain_dim": domain_dim,
         "Sigma_x_0_scale": Sigma_x_0_scale,
         "Sigma_x_0": jnp.eye(domain_dim) * Sigma_x_0_scale,
-        # "mu_x_0": jnp.ones(domain_dim) * 2.,
-        "mu_x_0": jnp.ones(domain_dim) * 0.,
+        "mu_x_0": jnp.ones(domain_dim) * 2.,
         "Sigma_v_0_scale": Sigma_v_0_scale,
         "Sigma_v_0": jnp.eye(domain_dim) * Sigma_v_0_scale,
         "mu_v_0": jnp.zeros(domain_dim),
         # for OU
-        "Sigma_x_inf": jnp.eye(domain_dim) / beta,
-        "mu_x_inf": jnp.zeros(domain_dim),
+        "OU": {
+            "Sigma_x_inf": jnp.eye(domain_dim) / beta,
+            "mu_x_inf": jnp.zeros(domain_dim),
+        },
         # for GMM
-        "covs_GMM": jnp.ones([]) * 1, 
-        "mus_GMM": jnp.stack([jnp.array([-2., -2.]), jnp.array([-2., 2.]), jnp.array([2., -2.]), jnp.array([2., 2.])], axis=0),
-        "weights_GMM": jnp.array([.25, .25, .25, .25]),
         "GMM": {
-            "mus": [jnp.array([2, 2]), jnp.array([-2, 2]), jnp.array([-2, -2]), jnp.array([2, -2]), jnp.array([0, 0])],
-            "covs": [jnp.array([[1, 0], [0, 1]]),
-                     jnp.array([[1, 0], [0, 1]]),
-                     jnp.array([[1, 0], [0, 1]]),
-                     jnp.array([[1, 0], [0, 1]]),
-                     jnp.array([[1, 0], [0, 1]]),
-                     ],
-            "weights": jnp.ones([5])/5,
+            "mus": [jax.random.uniform(_rng, [domain_dim], minval=GMM_mean_min, maxval=GMM_mean_max) for _rng in rngs],
+            # "mus": [jnp.array([2, 2]), jnp.array([-2, 2]), jnp.array([-2, -2]), jnp.array([2, -2]), jnp.array([0, 0])],
+            "covs": [jnp.eye(domain_dim) for _ in range(number_of_centers_GMM)],
+            # "covs": [jnp.array([[1, 0], [0, 1]]),
+            #          jnp.array([[1, 0], [0, 1]]),
+            #          jnp.array([[1, 0], [0, 1]]),
+            #          jnp.array([[1, 0], [0, 1]]),
+            #          jnp.array([[1, 0], [0, 1]]),
+            #          ],
+            "weights": jnp.ones([number_of_centers_GMM]) / number_of_centers_GMM,
         }
-        # # TODO: define this for any dimension.
-        # "covs_GMM": [jnp.array([[1, 0], [0, 1]]),
-        #              jnp.array([[1, 0], [0, 1]]),
-        #              jnp.array([[1, 0], [0, 1]]),
-        #              jnp.array([[1, 0], [0, 1]]),
-        #              jnp.array([[1, 0], [0, 1]]),
-        #              ],
-        # "mus_GMM": [jnp.array([2, 2]), jnp.array([-2, 2]), jnp.array([-2, -2]), jnp.array([2, -2]), jnp.array([0, 0])],
-        # # "weights_GMM": jnp.array([.25, .25, .25, .25]),
-        # "weights_GMM": jnp.ones([5])/5,
     }
 
 def get_distribution_t(t, configuration, beta, Gamma):
@@ -122,7 +118,7 @@ def get_distribution_t(t, configuration, beta, Gamma):
 
 def get_potential(potential_type, configuration):
     if potential_type == "OU":
-        return QuadraticPotential(configuration["mu_x_inf"], configuration["Sigma_x_inf"])
+        return QuadraticPotential(configuration["OU"]["mu_x_inf"], configuration["OU"]["Sigma_x_inf"])
     elif potential_type == "GMM":
         # return GMMPotential(mus=configuration["mus_GMM"], covs=configuration["covs_GMM"], weights=configuration["weights_GMM"])
         return GMMPotential(mus=configuration["GMM"]["mus"], covs=configuration["GMM"]["covs"], weights=configuration["GMM"]["weights"])
@@ -143,9 +139,10 @@ def prepare_equilibrium(configuration, beta, Gamma, potential_type) -> Distribut
         pass
         # raise NotImplementedError
     elif potential_type == "GMM":
+        print(configuration["GMM"]["mus"])
         # TODO: need a more general implementation for beta != 2
         distribution_x = GaussianMixtureModel(mus=configuration["GMM"]["mus"], covs=configuration["GMM"]["covs"], weights=configuration["GMM"]["weights"])
-        distribution_v = Gaussian(mu=jnp.zeros([2]), cov=jnp.eye(2))
+        distribution_v = Gaussian(mu=jnp.zeros(configuration["domain_dim"]), cov=jnp.eye(configuration["domain_dim"]))
         return DistributionKinetic(distribution_x, distribution_v)
     else:
         raise ValueError("Unknown potential type!")
@@ -158,7 +155,8 @@ class KineticFokkerPlanck(ProblemInstance):
         # To ensure that dx = v dt, we have Gamma == jnp.sqrt(4 * beta) and Gamma * beta == diffusion_coefficient
         self.beta = (self.diffusion_coefficient / 2) ** (2 / 3)
         self.Gamma = 2 * jnp.sqrt(self.beta)
-        self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta)
+        self.rng, rng_init_config = jax.random.split(self.rng)
+        self.initial_configuration = initialize_configuration(cfg.pde_instance.domain_dim, self.beta, rng_init_config)
         self.target_potential = get_potential(self.cfg.pde_instance.potential, self.initial_configuration)
 
         # Equilibrium distribution
@@ -166,15 +164,14 @@ class KineticFokkerPlanck(ProblemInstance):
 
         # Analytical solution
         distribution_0 = get_distribution_t(jnp.zeros([]), self.initial_configuration, self.beta, self.Gamma)
-        self.u_0 = distribution_0.density
 
-        def u_t(t: jnp.ndarray, x: jnp.ndarray):
+        def density_t(t: jnp.ndarray, x: jnp.ndarray):
             assert t.ndim == 0
             mu_t, cov_t = Kinetic_OU_process(t, self.initial_configuration, self.beta, self.Gamma)
             log_u_t = gaussian_log_density(x, cov_t, mu_t)
             return jnp.exp(log_u_t)
         
-        self.u_t = u_t
+        self.density_t = density_t
 
         # Distributions for KiNet
         self.distribution_0 = distribution_0

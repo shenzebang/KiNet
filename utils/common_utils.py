@@ -119,6 +119,12 @@ def compute_pytree_norm(pytree):
     pytree_norm = jnp.sqrt(sum(jnp.vdot(g, g) for g in jax.tree_util.tree_leaves(pytree)))
     return pytree_norm
 
+@jax.jit
+def compute_pytree_difference(pytree1, pytree2):
+    pytree_diff = jax.tree_util.tree_map(lambda x, y: x - y, pytree1, pytree2)
+    pytree_norm = jnp.sqrt(sum(jnp.vdot(g, g) for g in jax.tree_util.tree_leaves(pytree_diff)))
+    return pytree_norm
+
 def normalize_grad(pytree, norm):
     return jax.tree_util.tree_map(lambda x: x/norm, pytree)
 

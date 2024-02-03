@@ -2,7 +2,7 @@ import optax
 import wandb
 import jax
 import jax.numpy as jnp
-from utils.common_utils import compute_pytree_norm, normalize_grad
+from utils.common_utils import compute_pytree_norm, normalize_grad, compute_pytree_difference
 from api import Method
 import jax.random as random
 from optax import GradientTransformation
@@ -57,8 +57,9 @@ class JaxTrainer:
             # value_and_grad_fn = _value_and_grad_fn
 
         @jax.jit
-        def step_fn(params, opt_state, grad):
-            updates, opt_state = self.optimizer.update(grad, opt_state, params)
+        def step_fn(params, opt_state, grad, scale=1):
+            updates, opt_state = self.optimizer.update(grad, opt_state, params)   
+            updates = jax.tree_util.tree_map(lambda g: scale * g, updates)
             params = optax.apply_updates(params, updates)
             return params, opt_state
 
@@ -105,12 +106,18 @@ class JaxTrainer:
             
         opt_state = self.optimizer.init(self.params["current"])
         for shard_id, rng_shard in enumerate(rngs_shard):
+            if self.cfg.train.reduce_step_after_first_shard:
+                scale = 0.1 if shard_id > 0 else 1
+            else:
+                scale = 1
             minimum_loss = jnp.inf
             best_model_shard_id = self.params["current"]
+            model_initial = self.params["current"]
             # self.time_interval["current"] = jnp.array([shard_id * self.time_per_shard, (shard_id+1) * self.time_per_shard])
             self.time_interval["current"] = jnp.array([0, self.time_per_shard])
             # initialize the opt_state
-            # opt_state = self.optimizer.init(self.params["current"])
+            if self.cfg.train.optimizer.reinitialize_per_shard:
+                opt_state = self.optimizer.init(self.params["current"])
             rng_shard, rng_plot, rng_metric = jax.random.split(rng_shard, 3)
             rngs = jax.random.split(rng_shard, self.cfg.train.number_of_iterations)
 
@@ -124,20 +131,25 @@ class JaxTrainer:
 
                 v_g_etc = value_and_grad_fn(self.params, self.time_interval, rng_train)
                 grad = normalize_grad(v_g_etc["grad"], v_g_etc["grad norm"]) if self.cfg.train.normalize_grad else v_g_etc["grad"]
-                self.params["current"], opt_state = step_fn(self.params["current"], opt_state, grad)
+                self.params["current"], opt_state = step_fn(self.params["current"], opt_state, grad, scale)
+
+                # update the best model based on loss
                 if v_g_etc["loss"] < minimum_loss:
                     best_model_shard_id = self.params["current"]
                     minimum_loss = v_g_etc["loss"]
-
+                
+                # log stats
                 v_g_etc.pop("grad")
-                params_norm = compute_pytree_norm(self.params["current"])
-                v_g_etc["params_norm"] = params_norm
+                v_g_etc["params_norm"] = compute_pytree_norm(self.params["current"])
+                v_g_etc["distance to initial"] = compute_pytree_difference(model_initial, self.params["current"])
 
                 log_dict_epoch ={
                     f"shard {shard_id}/step": epoch,
                 }
                 for key in v_g_etc:
                     log_dict_epoch[f"shard {shard_id}/{key}"] = v_g_etc[key]
+                
+                # perform test
                 if self.cfg.pde_instance.perform_test and (epoch % self.cfg.test.frequency == 0 or epoch >= self.cfg.train.number_of_iterations - 3):
                     result_epoch = test_fn(self.params, self.time_interval, rng_test)
                     for key in result_epoch:
@@ -150,6 +162,16 @@ class JaxTrainer:
                             msg = msg + f"{key} is {result_epoch[key]: .3e}, "
                         print(msg)
                 wandb.log(log_dict_epoch)
+
+            # record the testing error of the saved model (the best model for the shard)            
+            if self.cfg.pde_instance.perform_test:
+                self.params["current"] = best_model_shard_id
+                rng_test, _ = jax.random.split(rng_test)
+                result_shard = test_fn(self.params, self.time_interval, rng_test)
+                log_dict_best_model_test = {"best model/step": (shard_id+1) * self.time_per_shard}
+                for key in result_shard:
+                    log_dict_best_model_test[f"best model/{key}"] = result_shard[key]
+                wandb.log(log_dict_best_model_test)
 
             minimum_loss_collection.append(minimum_loss)
             # store the params for a specific time shard
@@ -168,5 +190,5 @@ class JaxTrainer:
             if self.cfg.pde_instance.test_metric:
                 test_metric_and_log_fn(self.params, self.time_interval, rng_metric, shard_id)
             
-            # TODO: record the testing error of the saved model (the best model)            
+
 

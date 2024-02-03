@@ -19,6 +19,7 @@ class ProblemInstance:
         self.dim = cfg.pde_instance.domain_dim
         self.diffusion_coefficient = jnp.ones([]) * cfg.pde_instance.diffusion_coefficient
         self.total_evolving_time = jnp.ones([]) * cfg.pde_instance.total_evolving_time
+        self.rng = rng
         
         # The following instance attributes should be implemented
         

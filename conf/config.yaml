@@ -27,7 +27,9 @@ train:
   batch_size: 64
   number_of_time_shard: !!int 1
   normalize_grad: !!bool False
+  reduce_step_after_first_shard: !!bool False
   optimizer:
+    reinitialize_per_shard: !!bool True 
     method: SGD
     momentum: 0.9
     weight_decay: 0.001
