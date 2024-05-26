@@ -73,14 +73,13 @@ def Kinetic_OU_process(t: jnp.ndarray, configuration, beta, Gamma):
 
 
 def initialize_configuration(domain_dim: int, beta, rng):
-    # TODO: generate GMM centroid randomly
     Sigma_x_0_scale = 1.
     Sigma_v_0_scale = 1.
     number_of_centers_GMM = 3
     rngs = jax.random.split(rng, number_of_centers_GMM)
     GMM_mean_min = -4
     GMM_mean_max = 4
-    return {
+    configuration = {
         "domain_dim": domain_dim,
         "Sigma_x_0_scale": Sigma_x_0_scale,
         "Sigma_x_0": jnp.eye(domain_dim) * Sigma_x_0_scale,
@@ -107,6 +106,11 @@ def initialize_configuration(domain_dim: int, beta, rng):
             "weights": jnp.ones([number_of_centers_GMM]) / number_of_centers_GMM,
         }
     }
+    # normalize to zero mean
+    mu_mean = jnp.mean(jnp.stack(configuration["GMM"]["mus"], axis=0), axis=0)
+    configuration["GMM"]["mus"] = [mu - mu_mean for mu in configuration["GMM"]["mus"]]
+
+    return configuration
 
 def get_distribution_t(t, configuration, beta, Gamma):
     assert t.ndim == 0

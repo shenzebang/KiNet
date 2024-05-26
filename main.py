@@ -5,6 +5,7 @@ import jax.random as random
 from core.trainer import JaxTrainer
 from register import get_pde_instance, get_method
 from utils.optimizer import get_optimizer
+from utils.logging_utils import load_checkpoint_from_cfg
 
 
 @hydra.main(config_path="conf", config_name="config")
@@ -31,6 +32,10 @@ def main(cfg):
 
     # create model
     net, params = method.create_model_fn()
+
+    # restore model
+    if cfg.save_and_load.load_model:
+        params = load_checkpoint_from_cfg(cfg)
 
     # create optimizer
     optimizer = get_optimizer(cfg.train)

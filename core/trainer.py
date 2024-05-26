@@ -33,7 +33,7 @@ class JaxTrainer:
 
     def fit(self, ):
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-        options = orbax.checkpoint.CheckpointManagerOptions(max_to_keep=1, create=True)
+        options = orbax.checkpoint.CheckpointManagerOptions(create=True)
         checkpoint_manager = orbax.checkpoint.CheckpointManager(self.checkpoint_directory, orbax_checkpointer, options)
 
 

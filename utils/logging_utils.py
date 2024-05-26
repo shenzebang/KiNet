@@ -4,6 +4,8 @@ import pandas as pd
 import os, json
 import uuid
 import os
+import orbax.checkpoint
+
 
 def save_to_csv(data_dict: Dict, save_file: str):
     data_arrays = jnp.stack([jnp.array(data_dict[key]) for key in data_dict], axis=1)
@@ -21,3 +23,13 @@ def get_checkpoint_directory_from_cfg(cfg):
     pde_instance_name = f"{cfg.pde_instance.domain_dim}D-{cfg.pde_instance.name}"
     directory = f"{pde_instance_name}-{cfg.solver.name}-{cfg.pde_instance.total_evolving_time}"
     return f"{os.path.expanduser("~")}/checkpoint/{directory}"
+
+def load_checkpoint_from_cfg(cfg):
+    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+    directory = get_checkpoint_directory_from_cfg(cfg)
+    save_index_dirs = os.listdir(directory)[0]
+    check_point_directory = f"{directory}/{save_index_dirs}/default"
+    print(f"==========Load checkpoint from {check_point_directory} ==========")
+    raw_restored = orbax_checkpointer.restore(check_point_directory)
+    params_0 = raw_restored["model"]["previous"][0]
+    return params_0
